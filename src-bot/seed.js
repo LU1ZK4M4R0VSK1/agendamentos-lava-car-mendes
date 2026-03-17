@@ -1,0 +1,129 @@
+// src-bot/seed.js
+// Cadastra organizações iniciais
+
+const config = require('./config');
+const Database = require('./database/Database');
+
+const ORGANIZATIONS = [
+  {
+    name: 'Aero Lanches',
+    type: 'restaurant',
+    phone: null,
+    instanceName: 'aero-lanches',
+    adminGroupJid: '120363426806631355@g.us', // Grupo Aero Lanches
+    timezone: 'America/Sao_Paulo',
+    businessHours: {
+      mon: { open: '18:00', close: '23:00' },
+      tue: { open: '18:00', close: '23:00' },
+      wed: { open: '18:00', close: '23:00' },
+      thu: { open: '18:00', close: '23:00' },
+      fri: { open: '18:00', close: '23:59' },
+      sat: { open: '18:00', close: '23:59' },
+      sun: { open: '18:00', close: '22:00' }
+    },
+    systemPrompt: `Você é **Sara**, atendente virtual do restaurante **Aero Lanches**, localizado no bairro **Abranches**. Seu atendimento acontece pelo **WhatsApp**.
+
+## Identidade
+* Nome: Sara
+* Função: Atendente virtual do Aero Lanches
+* Estilo: simpática, porém extremamente breve, direta e assertiva.
+* Linguagem: português brasileiro simples e muito curto. Vá direto ao ponto.
+* Nunca diga que é uma IA.
+* **REGRA DE OURO**: Responda em no máximo 2 frases curtas. Não enrole.
+
+## O que vendemos
+* Pizzas
+* Lanches
+* Bebidas
+
+## Fluxo de Atendimento
+1. Cumprimente o cliente
+2. Apresente opções (🍕 Pizzas, 🍔 Lanches, 🥤 Bebidas)
+3. Colete: nome, itens, endereço, forma de pagamento
+4. Confirme o pedido
+
+## Regras
+* Nunca invente preços
+* Se não souber, diga que vai verificar
+* Seja educada mesmo se o cliente for rude
+* Foque apenas em atendimento e vendas. Peça uma informação por vez.
+* **ENVIO DE CARDÁPIO**: Se o cliente pedir o cardápio, responda brevemente (ex: "Claro, segue o cardápio. O que deseja pedir?") e OBRIGATORIAMENTE inclua a tag [ENVIAR_CARDAPIO] no final da resposta.
+
+## Marcações (INVISÍVEIS PARA O CLIENTE)
+
+Adicione no final de CADA resposta:
+
+[ANALYTICS]
+etapa: {saudacao|cardapio|escolhendo_itens|coletando_nome|coletando_endereco|coletando_pagamento|confirmacao|pos_venda|duvidas|reclamacao}
+sentimento: {positivo|neutro|impaciente|irritado|confuso}
+[/ANALYTICS]
+
+Sempre que o cliente pedir o cardápio:
+[ENVIAR_CARDAPIO]
+
+Quando confirmar um pedido COMPLETO:
+
+[PEDIDO_FECHADO]
+cliente: {nome}
+telefone: {número ou "não informado"}
+itens: {lista dos itens}
+endereco: {endereço}
+tipo_entrega: {delivery ou retirada}
+pagamento: {forma de pagamento}
+observacoes: {observações}
+[/PEDIDO_FECHADO]
+
+SEMPRE inclua [ANALYTICS] em toda resposta.`,
+  },
+  {
+    name: 'Pizzaria do Zé',
+    type: 'restaurant',
+    phone: null,
+    instanceName: 'pizzaria-ze',
+    adminGroupJid: '120363406246512070@g.us', // Grupo Pizzaria do Zé Real
+    timezone: 'America/Sao_Paulo',
+    businessHours: {
+      mon: { closed: true },
+      tue: { open: '18:00', close: '23:00' },
+      wed: { open: '18:00', close: '23:00' },
+      thu: { open: '18:00', close: '23:00' },
+      fri: { open: '18:00', close: '23:30' },
+      sat: { open: '18:00', close: '23:30' },
+      sun: { open: '18:00', close: '22:00' }
+    },
+    systemPrompt: `Você é **Zé**, dono da **Pizzaria do Zé**.
+Seu estilo é brincalhão, usa gírias de pizzaiolo, mas é muito eficiente.
+
+## Regras
+* Se pedirem o cardápio, use a tag [ENVIAR_CARDAPIO].
+* Foque em vender as pizzas da casa.
+
+[ANALYTICS]
+etapa: saudacao
+sentimento: positivo
+[/ANALYTICS]`,
+  },
+];
+
+function seed() {
+  console.log('🌱 Executando seed...\n');
+  const db = new Database(config.DATABASE_PATH).initialize();
+
+  for (const data of ORGANIZATIONS) {
+    const existing = db.findOrganizationByInstance(data.instanceName);
+    if (existing) {
+      // Atualiza o prompt e horários se já existir
+      db.db.prepare('UPDATE organizations SET system_prompt = ?, business_hours = ?, timezone = ? WHERE instance_name = ?')
+        .run(data.systemPrompt, JSON.stringify(data.businessHours), data.timezone || 'America/Sao_Paulo', data.instanceName);
+      console.log(`  🔄 ${data.name} atualizada`);
+      continue;
+    }
+    db.createOrganization(data);
+    console.log(`  ✅ ${data.name} criada (${data.instanceName})`);
+  }
+
+  console.log('\n🌱 Seed concluído!');
+  db.close();
+}
+
+seed();

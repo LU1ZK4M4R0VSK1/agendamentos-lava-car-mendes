@@ -37,6 +37,8 @@ services:
       redis-server --port 6379 --appendonly yes
     volumes:
       - evolution_redis:/data
+    ports:
+      - "6379:6379"
     networks:
       evolution-net:
         aliases:
@@ -44,8 +46,6 @@ services:
       dokploy-network:
         aliases:
           - evolution-redis
-    expose:
-      - "6379"
 
   evolution-postgres:
     container_name: evolution_postgres
@@ -65,11 +65,11 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
     networks:
       - evolution-net
       - dokploy-network
-    expose:
-      - "5432"
 
 volumes:
   evolution_instances:

@@ -1,0 +1,73 @@
+{
+  "vendas": [
+    {
+      "id": "PED-1772888383589",
+      "dataHora": "2026-03-07T12:59:43.589Z",
+      "timestamp": 1772888383589,
+      "hora": 9,
+      "diaSemana": "sábado",
+      "data": "07/03/2026",
+      "cliente": "Luiz",
+      "telefone": "não informado",
+      "itens": "1 Pizza GG de Calabresa, 1 Coca-Cola",
+      "endereco": "Abranches 1137",
+      "tipoentrega": "delivery",
+      "pagamento": "Cartão de crédito",
+      "observacoes": "nenhuma"
+    }
+  ],
+  "sessoes": [],
+  "abandonos": [],
+  "itensNaoDisponiveis": [],
+  "sentimentos": [
+    {
+      "etapa": "saudacao",
+      "sentimento": "neutro",
+      "timestamp": 1772888322393,
+      "sessaoId": "SESSAO-1772888296814"
+    },
+    {
+      "etapa": "cardapio",
+      "sentimento": "neutro",
+      "timestamp": 1772888336638,
+      "sessaoId": "SESSAO-1772888296814"
+    },
+    {
+      "etapa": "coletando_nome",
+      "sentimento": "neutro",
+      "timestamp": 1772888355303,
+      "sessaoId": "SESSAO-1772888296814"
+    },
+    {
+      "etapa": "confirmacao",
+      "sentimento": "neutro",
+      "timestamp": 1772888376433,
+      "sessaoId": "SESSAO-1772888296814"
+    },
+    {
+      "etapa": "confirmacao",
+      "sentimento": "positivo",
+      "timestamp": 1772888383680,
+      "sessaoId": "SESSAO-1772888296814"
+    }
+  ],
+  "ultimaAtualizacao": "2026-03-07T12:59:43.681Z",
+  "resumo": {
+    "totalVendas": 1,
+    "totalAbandonos": 0,
+    "clientesUnicos": 1,
+    "taxaConversao": "0%"
+  },
+  "metricasPremium": {
+    "abandonoPorEtapa": {},
+    "sentimentoGeral": {
+      "positivo": 1,
+      "neutro": 4,
+      "impaciente": 0,
+      "irritado": 0,
+      "confuso": 0
+    },
+    "itensNaoTemos": {},
+    "alertasIrritacao": []
+  }
+}
