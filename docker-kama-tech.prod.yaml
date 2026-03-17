@@ -1,0 +1,154 @@
+# ============================================
+# KAMA TECH — Docker Compose de Produção
+# Sobe: PostgreSQL + Redis + Evolution API + Bot + Frontend
+# Uso: docker compose -f docker-kama-tech.prod.yaml up -d
+# ============================================
+
+services:
+  # ── BANCO DE DADOS ──
+  postgres:
+    container_name: kama_postgres
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${PG_USER:-postgres}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-KamaTech2024!}
+      POSTGRES_DB: ${PG_DATABASE:-evolution_db}
+    command:
+      - postgres
+      - -c
+      - max_connections=200
+      - -c
+      - listen_addresses=*
+    volumes:
+      - kama_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    networks:
+      - kama-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── REDIS (cache da Evolution API) ──
+  redis:
+    container_name: kama_redis
+    image: redis:7-alpine
+    restart: always
+    command: redis-server --port 6379 --appendonly yes
+    volumes:
+      - kama_redis_data:/data
+    networks:
+      - kama-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── EVOLUTION API (WhatsApp) ──
+  evolution-api:
+    container_name: kama_evolution
+    image: evoapicloud/evolution-api:latest
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    volumes:
+      - kama_instances:/evolution/instances
+    networks:
+      - kama-net
+    environment:
+      # Servidor
+      - SERVER_URL=http://localhost:8080
+      - SERVER_TYPE=http
+      - SERVER_PORT=8080
+      # Autenticação
+      - AUTHENTICATION_API_KEY=${EVOLUTION_APIKEY:-KamaTech_ApiKey_2024}
+      - AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES=true
+      # Banco (PostgreSQL)
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://${PG_USER:-postgres}:${PG_PASSWORD:-KamaTech2024!}@postgres:5432/${PG_DATABASE:-evolution_db}?schema=public
+      - DATABASE_CONNECTION_CLIENT_NAME=evolution_api
+      - DATABASE_SAVE_DATA_INSTANCE=true
+      - DATABASE_SAVE_DATA_NEW_MESSAGE=true
+      - DATABASE_SAVE_MESSAGE_UPDATE=true
+      - DATABASE_SAVE_DATA_CONTACTS=true
+      - DATABASE_SAVE_DATA_CHATS=true
+      - DATABASE_SAVE_DATA_LABELS=true
+      - DATABASE_SAVE_DATA_HISTORIC=true
+      # Redis
+      - CACHE_REDIS_ENABLED=true
+      - CACHE_REDIS_URI=redis://redis:6379
+      - CACHE_REDIS_PREFIX_KEY=evolution
+      - CACHE_REDIS_SAVE_INSTANCES=true
+      - CACHE_LOCAL_ENABLED=false
+      # WhatsApp
+      - CONFIG_SESSION_PHONE_CLIENT=Kama Tech
+      - CONFIG_SESSION_PHONE_NAME=Chrome
+      - QRCODE_LIMIT=10
+      - QRCODE_COLOR=#000000
+      # Webhook (aponta para o bot)
+      - WEBHOOK_GLOBAL_ENABLED=false
+      - WEBHOOK_GLOBAL_URL=http://bot:3001/webhook
+      - WEBHOOK_GLOBAL_WEBHOOK_BY_EVENTS=false
+      # Log
+      - LOG_LEVEL=WARN
+      - DEL_INSTANCE=false
+
+  # ── BOT WHATSAPP (Kama Tech) ──
+  bot:
+    container_name: kama_bot
+    build:
+      context: .
+      dockerfile: Dockerfile.bot
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3001:3001"
+    networks:
+      - kama-net
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-COLOQUE_SUA_CHAVE_AQUI}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash}
+      - BOT_PORT=3001
+      - BOT_DEBUG=${BOT_DEBUG:-false}
+      - EVOLUTION_API_URL=http://evolution-api:8080
+      - EVOLUTION_APIKEY=${EVOLUTION_APIKEY:-KamaTech_ApiKey_2024}
+      - POSTGRES_URL=postgresql://${PG_USER:-postgres}:${PG_PASSWORD:-KamaTech2024!}@postgres:5432/bot_db
+      - ADMIN_GROUP_JID=${ADMIN_GROUP_JID:-}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── FRONTEND (Painel Evolution) ──
+  frontend:
+    container_name: kama_frontend
+    image: evoapicloud/evolution-manager:latest
+    restart: always
+    depends_on:
+      - evolution-api
+    ports:
+      - "3000:80"
+    networks:
+      - kama-net
+
+volumes:
+  kama_postgres_data:
+  kama_redis_data:
+  kama_instances:
+
+networks:
+  kama-net:
+    name: kama-net
+    driver: bridge

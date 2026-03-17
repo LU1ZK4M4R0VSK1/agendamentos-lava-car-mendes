@@ -13,7 +13,7 @@ class AIService {
   }
 
   async ask(db, conversationId, userMessage, systemPrompt) {
-    const rows = db.getConversationHistory(conversationId, 20);
+    const rows = await db.getConversationHistory(conversationId, 20);
     const history = rows.map(r => ({
       role: r.direction === 'inbound' ? 'user' : 'model',
       parts: [{ text: r.content }],

@@ -1,61 +1,62 @@
 // src-bot/database/Database.js
-// SQLite connection + all query methods (replaces separate repositories)
+// PostgreSQL connection + all query methods (migrated from SQLite/better-sqlite3)
 
-const BetterSqlite3 = require('better-sqlite3');
+const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
 const { randomUUID } = require('crypto');
 
 class Database {
-  constructor(dbPath) {
-    this.dbPath = dbPath;
-    this.db = null;
+  constructor(connectionString) {
+    this.connectionString = connectionString;
+    this.pool = null;
   }
 
-  initialize() {
-    const dir = path.dirname(this.dbPath);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  async initialize() {
+    this.pool = new Pool({ connectionString: this.connectionString });
 
-    this.db = new BetterSqlite3(this.dbPath);
-    this.db.pragma('journal_mode = WAL');
-    this.db.pragma('foreign_keys = ON');
-    this.db.pragma('busy_timeout = 5000');
-
-    const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf-8');
-    this.db.exec(schema);
-
-    console.log(`✅ Banco inicializado: ${this.dbPath}`);
+    // Testa a conexão
+    const client = await this.pool.connect();
+    try {
+      const schema = fs.readFileSync(path.join(__dirname, 'schema-pg.sql'), 'utf-8');
+      await client.query(schema);
+      console.log(`✅ Banco PostgreSQL inicializado`);
+    } finally {
+      client.release();
+    }
     return this;
   }
 
-  close() {
-    if (this.db) { this.db.close(); this.db = null; }
+  async close() {
+    if (this.pool) { await this.pool.end(); this.pool = null; }
   }
 
   // ════════════════════════════════════════════
   // ORGANIZATIONS
   // ════════════════════════════════════════════
 
-  createOrganization({ name, type, phone, instanceName, adminGroupJid, systemPrompt, businessHours, timezone }) {
+  async createOrganization({ name, type, phone, instanceName, adminGroupJid, systemPrompt, businessHours, timezone }) {
     const id = randomUUID();
     const now = new Date().toISOString();
     const bhJson = typeof businessHours === 'object' ? JSON.stringify(businessHours) : (businessHours || null);
-    this.db.prepare(
+    await this.pool.query(
       `INSERT INTO organizations (id, name, type, phone, instance_name, admin_group_jid, system_prompt, business_hours, timezone, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(id, name, type || 'general', phone, instanceName, adminGroupJid, systemPrompt, bhJson, timezone || 'America/Sao_Paulo', now, now);
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [id, name, type || 'general', phone, instanceName, adminGroupJid, systemPrompt, bhJson, timezone || 'America/Sao_Paulo', now, now]
+    );
     return { id, name, type: type || 'general', phone, instanceName, adminGroupJid, systemPrompt, businessHours, timezone: timezone || 'America/Sao_Paulo' };
   }
 
-  findOrganizationByInstance(instanceName) {
-    const row = this.db.prepare('SELECT * FROM organizations WHERE instance_name = ?').get(instanceName);
+  async findOrganizationByInstance(instanceName) {
+    const { rows } = await this.pool.query('SELECT * FROM organizations WHERE instance_name = $1', [instanceName]);
+    const row = rows[0];
     if (!row) return null;
-    return { 
-      id: row.id, 
-      name: row.name, 
-      type: row.type, 
-      phone: row.phone, 
-      instanceName: row.instance_name, 
+    return {
+      id: row.id,
+      name: row.name,
+      type: row.type,
+      phone: row.phone,
+      instanceName: row.instance_name,
       adminGroupJid: row.admin_group_jid,
       systemPrompt: row.system_prompt,
       businessHours: row.business_hours ? JSON.parse(row.business_hours) : null,
@@ -65,44 +66,49 @@ class Database {
     };
   }
 
-  findAllOrganizations() {
-    return this.db.prepare('SELECT * FROM organizations ORDER BY name').all().map(row => ({
+  async findAllOrganizations() {
+    const { rows } = await this.pool.query('SELECT * FROM organizations ORDER BY name');
+    return rows.map(row => ({
       id: row.id, name: row.name, type: row.type, instanceName: row.instance_name,
       adminGroupJid: row.admin_group_jid,
     }));
   }
 
-  updateOrganizationNotices(instanceName, notices) {
+  async updateOrganizationNotices(instanceName, notices) {
     const now = notices ? new Date().toISOString() : null;
-    this.db.prepare(
-      'UPDATE organizations SET important_notices = ?, notices_updated_at = ? WHERE instance_name = ?'
-    ).run(notices, now, instanceName);
+    await this.pool.query(
+      'UPDATE organizations SET important_notices = $1, notices_updated_at = $2 WHERE instance_name = $3',
+      [notices, now, instanceName]
+    );
   }
 
   // ════════════════════════════════════════════
   // CUSTOMERS
   // ════════════════════════════════════════════
 
-  findOrCreateCustomer(remoteJid, organizationId, pushName) {
-    let row = this.db.prepare(
-      'SELECT * FROM customers WHERE remote_jid = ? AND organization_id = ?'
-    ).get(remoteJid, organizationId);
+  async findOrCreateCustomer(remoteJid, organizationId, pushName) {
+    const { rows } = await this.pool.query(
+      'SELECT * FROM customers WHERE remote_jid = $1 AND organization_id = $2',
+      [remoteJid, organizationId]
+    );
+    let row = rows[0];
 
     if (row) {
-      // Atualiza pushName e lastContact
-      this.db.prepare(
-        'UPDATE customers SET push_name = COALESCE(?, push_name), last_contact_at = ? WHERE id = ?'
-      ).run(pushName, new Date().toISOString(), row.id);
+      await this.pool.query(
+        'UPDATE customers SET push_name = COALESCE($1, push_name), last_contact_at = $2 WHERE id = $3',
+        [pushName, new Date().toISOString(), row.id]
+      );
       return { id: row.id, remoteJid: row.remote_jid, pushName: pushName || row.push_name, phone: row.phone };
     }
 
     const id = randomUUID();
     const phone = remoteJid.split('@')[0];
     const now = new Date().toISOString();
-    this.db.prepare(
+    await this.pool.query(
       `INSERT INTO customers (id, remote_jid, push_name, phone, organization_id, first_contact_at, last_contact_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).run(id, remoteJid, pushName, phone, organizationId, now, now);
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [id, remoteJid, pushName, phone, organizationId, now, now]
+    );
     return { id, remoteJid, pushName, phone };
   }
 
@@ -110,66 +116,69 @@ class Database {
   // CONVERSATIONS
   // ════════════════════════════════════════════
 
-  findActiveConversation(customerId, organizationId) {
-    return this.db.prepare(
+  async findActiveConversation(customerId, organizationId) {
+    const { rows } = await this.pool.query(
       `SELECT * FROM conversations
-       WHERE customer_id = ? AND organization_id = ? AND status = 'active'
-       ORDER BY last_message_at DESC LIMIT 1`
-    ).get(customerId, organizationId);
+       WHERE customer_id = $1 AND organization_id = $2 AND status = 'active'
+       ORDER BY last_message_at DESC LIMIT 1`,
+      [customerId, organizationId]
+    );
+    return rows[0] || null;
   }
 
-  createConversation(customerId, organizationId, instanceName) {
+  async createConversation(customerId, organizationId, instanceName) {
     const id = randomUUID();
     const now = new Date().toISOString();
-    this.db.prepare(
+    await this.pool.query(
       `INSERT INTO conversations (id, customer_id, organization_id, instance_name, status, started_at, last_message_at)
-       VALUES (?, ?, ?, ?, 'active', ?, ?)`
-    ).run(id, customerId, organizationId, instanceName, now, now);
+       VALUES ($1, $2, $3, $4, 'active', $5, $6)`,
+      [id, customerId, organizationId, instanceName, now, now]
+    );
     return { id, customerId, organizationId, status: 'active', startedAt: now };
   }
 
-  touchConversation(conversationId) {
-    this.db.prepare(
-      'UPDATE conversations SET last_message_at = ? WHERE id = ?'
-    ).run(new Date().toISOString(), conversationId);
+  async touchConversation(conversationId) {
+    await this.pool.query(
+      'UPDATE conversations SET last_message_at = $1 WHERE id = $2',
+      [new Date().toISOString(), conversationId]
+    );
   }
 
-  closeConversation(conversationId) {
+  async closeConversation(conversationId) {
     const now = new Date().toISOString();
-    this.db.prepare(
-      "UPDATE conversations SET status = 'closed', closed_at = ? WHERE id = ?"
-    ).run(now, conversationId);
+    await this.pool.query(
+      "UPDATE conversations SET status = 'closed', closed_at = $1 WHERE id = $2",
+      [now, conversationId]
+    );
   }
 
-  closeExpiredConversations(timeoutMinutes) {
+  async closeExpiredConversations(timeoutMinutes) {
     const cutoff = new Date(Date.now() - timeoutMinutes * 60 * 1000).toISOString();
     const now = new Date().toISOString();
-    return this.db.prepare(
-      "UPDATE conversations SET status = 'closed', closed_at = ? WHERE status = 'active' AND last_message_at < ?"
-    ).run(now, cutoff).changes;
+    const result = await this.pool.query(
+      "UPDATE conversations SET status = 'closed', closed_at = $1 WHERE status = 'active' AND last_message_at < $2",
+      [now, cutoff]
+    );
+    return result.rowCount;
   }
 
-  /**
-   * Busca ou cria conversa ativa. Se a anterior expirou, fecha e cria nova.
-   * @returns {{ conversation: object, isNew: boolean }}
-   */
-  findOrCreateConversation(customerId, organizationId, instanceName, timeoutMinutes) {
-    let conv = this.findActiveConversation(customerId, organizationId);
+  async findOrCreateConversation(customerId, organizationId, instanceName, timeoutMinutes) {
+    let conv = await this.findActiveConversation(customerId, organizationId);
 
     if (conv) {
       const lastMsg = new Date(conv.last_message_at).getTime();
       const expired = (Date.now() - lastMsg) > timeoutMinutes * 60 * 1000;
 
       if (expired) {
-        this.closeConversation(conv.id);
+        await this.closeConversation(conv.id);
         conv = null;
       } else {
-        this.touchConversation(conv.id);
+        await this.touchConversation(conv.id);
         return { conversation: { id: conv.id }, isNew: false };
       }
     }
 
-    const newConv = this.createConversation(customerId, organizationId, instanceName);
+    const newConv = await this.createConversation(customerId, organizationId, instanceName);
     return { conversation: newConv, isNew: true };
   }
 
@@ -177,49 +186,55 @@ class Database {
   // MESSAGES
   // ════════════════════════════════════════════
 
-  messageExists(whatsappMessageId) {
-    return !!this.db.prepare('SELECT 1 FROM messages WHERE whatsapp_message_id = ?').get(whatsappMessageId);
+  async messageExists(whatsappMessageId) {
+    const { rows } = await this.pool.query('SELECT 1 FROM messages WHERE whatsapp_message_id = $1', [whatsappMessageId]);
+    return rows.length > 0;
   }
 
-  createMessage({ conversationId, whatsappMessageId, direction, content, messageType, senderJid, timestamp }) {
+  async createMessage({ conversationId, whatsappMessageId, direction, content, messageType, senderJid, timestamp }) {
     const id = randomUUID();
-    this.db.prepare(
+    await this.pool.query(
       `INSERT INTO messages (id, conversation_id, whatsapp_message_id, direction, content, message_type, sender_jid, timestamp, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(id, conversationId, whatsappMessageId, direction, content, messageType || 'text', senderJid, timestamp || Math.floor(Date.now() / 1000), new Date().toISOString());
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [id, conversationId, whatsappMessageId, direction, content, messageType || 'text', senderJid, timestamp || Math.floor(Date.now() / 1000), new Date().toISOString()]
+    );
     return id;
   }
 
-  /** Busca últimas N mensagens para contexto do AI */
-  getConversationHistory(conversationId, limit = 20) {
-    return this.db.prepare(
-      'SELECT direction, content FROM messages WHERE conversation_id = ? ORDER BY timestamp DESC LIMIT ?'
-    ).all(conversationId, limit).reverse();
+  async getConversationHistory(conversationId, limit = 20) {
+    const { rows } = await this.pool.query(
+      'SELECT direction, content FROM messages WHERE conversation_id = $1 ORDER BY timestamp DESC LIMIT $2',
+      [conversationId, limit]
+    );
+    return rows.reverse();
   }
 
   // ════════════════════════════════════════════
   // SERVICE REQUESTS
   // ════════════════════════════════════════════
 
-  createServiceRequest({ conversationId, customerId, organizationId, type, details }) {
+  async createServiceRequest({ conversationId, customerId, organizationId, type, details }) {
     const id = `PED-${Date.now()}`;
     const now = new Date().toISOString();
     const detailsJson = typeof details === 'object' ? JSON.stringify(details) : details;
-    this.db.prepare(
+    await this.pool.query(
       `INSERT INTO service_requests (id, conversation_id, customer_id, organization_id, type, status, details, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)`
-    ).run(id, conversationId, customerId, organizationId, type || 'general', detailsJson, now, now);
+       VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8)`,
+      [id, conversationId, customerId, organizationId, type || 'general', detailsJson, now, now]
+    );
     return id;
   }
 
-  /** Busca pedido por ID — aceita ID parcial (últimos dígitos) */
-  findServiceRequestById(idOrPartial) {
-    // Primeiro tenta match exato
-    let row = this.db.prepare('SELECT * FROM service_requests WHERE id = ?').get(idOrPartial);
-    if (!row) {
-      // Tenta match parcial (ex: "779142" → "PED-1773180779142")
-      row = this.db.prepare("SELECT * FROM service_requests WHERE id LIKE '%' || ? ORDER BY created_at DESC LIMIT 1").get(idOrPartial);
+  async findServiceRequestById(idOrPartial) {
+    let { rows } = await this.pool.query('SELECT * FROM service_requests WHERE id = $1', [idOrPartial]);
+    if (rows.length === 0) {
+      const result = await this.pool.query(
+        "SELECT * FROM service_requests WHERE id LIKE '%' || $1 ORDER BY created_at DESC LIMIT 1",
+        [idOrPartial]
+      );
+      rows = result.rows;
     }
+    const row = rows[0];
     if (!row) return null;
     return {
       id: row.id,
@@ -232,33 +247,33 @@ class Database {
     };
   }
 
-  updateServiceRequestStatus(id, newStatus) {
-    this.db.prepare(
-      'UPDATE service_requests SET status = ?, updated_at = ? WHERE id = ?'
-    ).run(newStatus, new Date().toISOString(), id);
+  async updateServiceRequestStatus(id, newStatus) {
+    await this.pool.query(
+      'UPDATE service_requests SET status = $1, updated_at = $2 WHERE id = $3',
+      [newStatus, new Date().toISOString(), id]
+    );
   }
 
-  findCustomerById(customerId) {
-    const row = this.db.prepare('SELECT * FROM customers WHERE id = ?').get(customerId);
+  async findCustomerById(customerId) {
+    const { rows } = await this.pool.query('SELECT * FROM customers WHERE id = $1', [customerId]);
+    const row = rows[0];
     if (!row) return null;
     return { id: row.id, remoteJid: row.remote_jid, pushName: row.push_name, phone: row.phone };
   }
 
-  /**
-   * Busca o último endereço registrado em um pedido deste cliente nesta organização
-   */
-  getLastAddressForCustomer(customerId, organizationId) {
-    const row = this.db.prepare(
-      `SELECT details FROM service_requests 
-       WHERE customer_id = ? AND organization_id = ? 
-       AND details LIKE '%"endereco":"%' 
-       ORDER BY created_at DESC LIMIT 1`
-    ).get(customerId, organizationId);
+  async getLastAddressForCustomer(customerId, organizationId) {
+    const { rows } = await this.pool.query(
+      `SELECT details FROM service_requests
+       WHERE customer_id = $1 AND organization_id = $2
+       AND details LIKE '%"endereco":"%'
+       ORDER BY created_at DESC LIMIT 1`,
+      [customerId, organizationId]
+    );
 
-    if (!row) return null;
+    if (rows.length === 0) return null;
 
     try {
-      const details = JSON.parse(row.details);
+      const details = JSON.parse(rows[0].details);
       return details.endereco || null;
     } catch {
       return null;

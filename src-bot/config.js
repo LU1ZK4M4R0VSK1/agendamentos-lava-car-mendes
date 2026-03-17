@@ -17,8 +17,8 @@ const config = {
   GEMINI_TEMPERATURE: parseFloat(process.env.GEMINI_TEMPERATURE || '0.7'),
   GEMINI_MAX_TOKENS: parseInt(process.env.GEMINI_MAX_TOKENS || '1500', 10),
 
-  // Banco de Dados
-  DATABASE_PATH: process.env.DATABASE_PATH || path.join(__dirname, 'data', 'bot.db'),
+  // Banco de Dados (PostgreSQL)
+  POSTGRES_URL: process.env.POSTGRES_URL || 'postgresql://postgres:postgres@localhost:5432/bot_db',
 
   // Sessão de Conversa
   CONVERSATION_TIMEOUT_MINUTES: parseInt(process.env.CONVERSATION_TIMEOUT_MINUTES || '30', 10),

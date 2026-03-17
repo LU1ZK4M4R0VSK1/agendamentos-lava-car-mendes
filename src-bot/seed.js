@@ -1,6 +1,7 @@
 // src-bot/seed.js
-// Cadastra organizações iniciais
+// Cadastra organizações iniciais (PostgreSQL)
 
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const config = require('./config');
 const Database = require('./database/Database');
 
@@ -105,25 +106,30 @@ sentimento: positivo
   },
 ];
 
-function seed() {
-  console.log('🌱 Executando seed...\n');
-  const db = new Database(config.DATABASE_PATH).initialize();
+async function seed() {
+  console.log('🌱 Executando seed (PostgreSQL)...\n');
+  const db = await new Database(config.POSTGRES_URL).initialize();
 
   for (const data of ORGANIZATIONS) {
-    const existing = db.findOrganizationByInstance(data.instanceName);
+    const existing = await db.findOrganizationByInstance(data.instanceName);
     if (existing) {
       // Atualiza o prompt e horários se já existir
-      db.db.prepare('UPDATE organizations SET system_prompt = ?, business_hours = ?, timezone = ? WHERE instance_name = ?')
-        .run(data.systemPrompt, JSON.stringify(data.businessHours), data.timezone || 'America/Sao_Paulo', data.instanceName);
+      await db.pool.query(
+        'UPDATE organizations SET system_prompt = $1, business_hours = $2, timezone = $3 WHERE instance_name = $4',
+        [data.systemPrompt, JSON.stringify(data.businessHours), data.timezone || 'America/Sao_Paulo', data.instanceName]
+      );
       console.log(`  🔄 ${data.name} atualizada`);
       continue;
     }
-    db.createOrganization(data);
+    await db.createOrganization(data);
     console.log(`  ✅ ${data.name} criada (${data.instanceName})`);
   }
 
   console.log('\n🌱 Seed concluído!');
-  db.close();
+  await db.close();
 }
 
-seed();
+seed().catch(err => {
+  console.error('❌ Erro no seed:', err.message);
+  process.exit(1);
+});

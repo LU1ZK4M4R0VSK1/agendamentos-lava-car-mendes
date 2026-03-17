@@ -1,0 +1,21 @@
+FROM node:24-alpine
+
+RUN apk update && apk add --no-cache bash
+
+ENV TZ=America/Sao_Paulo
+
+WORKDIR /bot
+
+# Copia apenas o necessário para o bot
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts --silent 2>/dev/null; \
+    npm install pg better-sqlite3 express axios dotenv --silent
+
+COPY src-bot ./src-bot
+
+EXPOSE 3001
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+  CMD wget -qO- http://localhost:3001/health || exit 1
+
+CMD ["node", "src-bot/index.js"]

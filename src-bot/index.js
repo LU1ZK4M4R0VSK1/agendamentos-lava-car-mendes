@@ -1,5 +1,5 @@
 // src-bot/index.js
-// Entry point — MVP simplificado
+// Entry point — MVP simplificado (PostgreSQL)
 
 require('dotenv').config();
 const express = require('express');
@@ -12,12 +12,12 @@ const BusinessHoursService = require('./services/BusinessHoursService');
 const WebhookHandler = require('./services/WebhookHandler');
 const createRoutes = require('./webhook.routes');
 
-function main() {
-  console.log('🚀 Iniciando Bot MVP...');
+async function main() {
+  console.log('🚀 Iniciando Bot MVP (PostgreSQL)...');
   console.log(`📍 Config: Model=${config.GEMINI_MODEL}, Key=${config.GEMINI_API_KEY ? config.GEMINI_API_KEY.substring(0, 8) + '...' : 'MISSING'}`);
 
-  // 1. Banco
-  const db = new Database(config.DATABASE_PATH).initialize();
+  // 1. Banco (PostgreSQL — conexão assíncrona)
+  const db = await new Database(config.POSTGRES_URL).initialize();
 
   // 2. Serviços
   const aiService = new AIService({
@@ -39,17 +39,21 @@ function main() {
   app.use(createRoutes(webhookHandler));
 
   // 4. Limpeza periódica de conversas expiradas (a cada 5 min)
-  setInterval(() => {
-    const closed = db.closeExpiredConversations(config.CONVERSATION_TIMEOUT_MINUTES);
-    if (closed > 0 && config.DEBUG) console.log(`🧹 ${closed} conversa(s) expirada(s) fechada(s)`);
+  setInterval(async () => {
+    try {
+      const closed = await db.closeExpiredConversations(config.CONVERSATION_TIMEOUT_MINUTES);
+      if (closed > 0 && config.DEBUG) console.log(`🧹 ${closed} conversa(s) expirada(s) fechada(s)`);
+    } catch (err) {
+      console.error('❌ Erro ao fechar conversas expiradas:', err.message);
+    }
   }, 5 * 60 * 1000);
 
   // 5. Start
-  app.listen(config.PORT, () => {
+  app.listen(config.PORT, async () => {
     console.log(`🤖 Bot rodando em http://localhost:${config.PORT}/webhook`);
     console.log(`❤️  Health: http://localhost:${config.PORT}/health`);
 
-    const orgs = db.findAllOrganizations();
+    const orgs = await db.findAllOrganizations();
     if (orgs.length === 0) {
       console.log('\n⚠️  Nenhuma organização. Execute: node src-bot/seed.js');
     } else {
@@ -59,9 +63,12 @@ function main() {
   });
 
   // Graceful shutdown
-  const shutdown = () => { db.close(); process.exit(0); };
+  const shutdown = async () => { await db.close(); process.exit(0); };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
 }
 
-main();
+main().catch(err => {
+  console.error('❌ Erro fatal ao iniciar o bot:', err.message);
+  process.exit(1);
+});

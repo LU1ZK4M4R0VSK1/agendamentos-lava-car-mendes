@@ -58,13 +58,13 @@ class WebhookHandler {
     // ── Mensagem INDIVIDUAL (fluxo normal do bot) ──
 
     // Deduplicação
-    if (this.db.messageExists(whatsappMsgId)) {
+    if (await this.db.messageExists(whatsappMsgId)) {
       if (this.config.DEBUG) console.log(`🔁 Duplicada: ${whatsappMsgId}`);
       return;
     }
 
     // Identifica organização
-    const org = this.db.findOrganizationByInstance(instanceName);
+    const org = await this.db.findOrganizationByInstance(instanceName);
     if (!org) {
       console.warn(`⚠️ Instância desconhecida: ${instanceName}`);
       return;
@@ -73,15 +73,15 @@ class WebhookHandler {
     if (this.config.DEBUG) console.log(`💬 [${org.name}] ${data.pushName || remoteJid}: ${text}`);
 
     // Busca/cria customer e conversa
-    const customer = this.db.findOrCreateCustomer(remoteJid, org.id, data.pushName);
-    const { conversation, isNew } = this.db.findOrCreateConversation(
+    const customer = await this.db.findOrCreateCustomer(remoteJid, org.id, data.pushName);
+    const { conversation, isNew } = await this.db.findOrCreateConversation(
       customer.id, org.id, instanceName, this.config.CONVERSATION_TIMEOUT_MINUTES
     );
 
     if (isNew && this.config.DEBUG) console.log(`🆕 Nova conversa: ${conversation.id}`);
 
     // Salva mensagem recebida
-    this.db.createMessage({
+    await this.db.createMessage({
       conversationId: conversation.id,
       whatsappMessageId: whatsappMsgId,
       direction: 'inbound',
@@ -91,7 +91,7 @@ class WebhookHandler {
     });
 
     // Busca contexto extra (Endereço e Horário)
-    const lastAddress = this.db.getLastAddressForCustomer(customer.id, org.id);
+    const lastAddress = await this.db.getLastAddressForCustomer(customer.id, org.id);
     const timeContext = this.businessHoursService.getAIPromptContext(org.businessHours, org.timezone);
 
     let enrichedPrompt = org.systemPrompt || '';
@@ -120,7 +120,7 @@ class WebhookHandler {
     const cleanText = this.messageProcessor.clean(rawResponse);
 
     // Salva resposta
-    this.db.createMessage({
+    await this.db.createMessage({
       conversationId: conversation.id,
       direction: 'outbound',
       content: cleanText,
@@ -129,7 +129,7 @@ class WebhookHandler {
 
     // Se pedido detectado, salva e notifica grupo admin
     if (orderData) {
-      const requestId = this.db.createServiceRequest({
+      const requestId = await this.db.createServiceRequest({
         conversationId: conversation.id,
         customerId: customer.id,
         organizationId: org.id,
@@ -191,10 +191,10 @@ class WebhookHandler {
     const statsMatch = text.match(/^\.(dia|semana|mes|tudo)/i);
     if (statsMatch) {
       const period = statsMatch[1].toLowerCase();
-      const org = this.db.findOrganizationByInstance(instanceName);
+      const org = await this.db.findOrganizationByInstance(instanceName);
       if (!org) return;
 
-      const stats = this.statsService.getStats(org.id, period);
+      const stats = await this.statsService.getStats(org.id, period);
       
       const periodLabel = {
         dia: 'hoje',
@@ -229,18 +229,18 @@ class WebhookHandler {
     const noticeMatch = text.match(/^\.hoje\s+(.+)/i);
     if (noticeMatch) {
       const content = noticeMatch[1].trim();
-      const org = this.db.findOrganizationByInstance(instanceName);
+      const org = await this.db.findOrganizationByInstance(instanceName);
       if (!org) return;
 
       const adminGroupJid = org.adminGroupJid || this.config.ADMIN_GROUP_JID;
 
       if (content.toLowerCase() === 'limpar') {
-        this.db.updateOrganizationNotices(instanceName, null);
+        await this.db.updateOrganizationNotices(instanceName, null);
         await this._sendWhatsApp(instanceName, adminGroupJid, '✅ Avisos do dia limpos com sucesso.');
         return;
       }
 
-      this.db.updateOrganizationNotices(instanceName, content);
+      await this.db.updateOrganizationNotices(instanceName, content);
       await this._sendWhatsApp(instanceName, adminGroupJid, 
         `✅ *Aviso Salvo!* A IA usará esta informação nas próximas 24 horas:\n\n"${content}"`);
       return;
@@ -265,7 +265,7 @@ class WebhookHandler {
     };
 
     // Busca o pedido
-    const order = this.db.findServiceRequestById(pedidoId);
+    const order = await this.db.findServiceRequestById(pedidoId);
     if (!order) {
       // Tenta responder no grupo que enviou o comando
       const adminGroupJid = org.adminGroupJid || this.config.ADMIN_GROUP_JID;
@@ -276,10 +276,10 @@ class WebhookHandler {
 
     // Atualiza status
     const newStatus = statusMap[command];
-    this.db.updateServiceRequestStatus(order.id, newStatus);
+    await this.db.updateServiceRequestStatus(order.id, newStatus);
 
     // Busca o customer para enviar notificação
-    const customer = this.db.findCustomerById(order.customerId);
+    const customer = await this.db.findCustomerById(order.customerId);
     if (customer) {
       await this._sendWhatsApp(instanceName, customer.remoteJid, customerMessageMap[command]);
     }
@@ -298,7 +298,7 @@ class WebhookHandler {
 
   async _notifyAdminGroup(requestId, orderData, customer, orgName, instanceName) {
     // Busca a organização para pegar o grupo específico
-    const org = this.db.findOrganizationByInstance(instanceName);
+    const org = await this.db.findOrganizationByInstance(instanceName);
     const adminGroupJid = org?.adminGroupJid || this.config.ADMIN_GROUP_JID;
 
     if (!adminGroupJid) return;
