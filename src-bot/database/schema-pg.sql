@@ -75,17 +75,50 @@ CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
 CREATE INDEX IF NOT EXISTS idx_service_requests_org ON service_requests(organization_id);
 CREATE INDEX IF NOT EXISTS idx_service_requests_created ON service_requests(created_at);
 
+CREATE TABLE IF NOT EXISTS services (
+    id TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL REFERENCES organizations(id),
+    name TEXT NOT NULL,
+    duration_minutes INTEGER NOT NULL,
+    price DECIMAL(10,2) NOT NULL,
+    capacity INTEGER DEFAULT 1,
+    buffer_minutes INTEGER DEFAULT 0,
+    active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Garantia de campos caso tabela já exista (Migration inline)
+ALTER TABLE services ADD COLUMN IF NOT EXISTS capacity INTEGER DEFAULT 1;
+ALTER TABLE services ADD COLUMN IF NOT EXISTS buffer_minutes INTEGER DEFAULT 0;
+
+CREATE INDEX IF NOT EXISTS idx_services_org ON services(organization_id);
+
+-- Habilita a extensão GIST para range overlap
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+
 CREATE TABLE IF NOT EXISTS appointments (
     id TEXT PRIMARY KEY,
     customer_id TEXT NOT NULL REFERENCES customers(id),
     organization_id TEXT NOT NULL REFERENCES organizations(id),
-    service_type TEXT,
+    service_id TEXT REFERENCES services(id),
     start_time TIMESTAMPTZ NOT NULL,
     end_time TIMESTAMPTZ NOT NULL,
-    status TEXT DEFAULT 'agendado',
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(organization_id, start_time)
+    status TEXT CHECK (status IN ('agendado','confirmado','cancelado','concluido')) DEFAULT 'agendado',
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'no_overlap') THEN
+        ALTER TABLE appointments
+        ADD CONSTRAINT no_overlap
+        EXCLUDE USING GIST (
+            organization_id WITH =,
+            tstzrange(start_time, end_time) WITH &&
+        )
+        WHERE (status = 'agendado');
+    END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_appointments_org ON appointments(organization_id);
 CREATE INDEX IF NOT EXISTS idx_appointments_start ON appointments(start_time);

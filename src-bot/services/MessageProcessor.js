@@ -45,7 +45,7 @@ class MessageProcessor {
     for (const line of match[1].trim().split('\n')) {
       const i = line.indexOf(':');
       if (i > 0) {
-        const key = line.substring(0, i).trim().toLowerCase().replace(/[_\s]/g, '');
+        const key = line.substring(0, i).trim().toLowerCase().replace(/\s/g, '');
         const val = line.substring(i + 1).trim();
         if (key && val) apt[key] = val;
       }

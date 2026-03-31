@@ -281,29 +281,87 @@ class Database {
   }
 
   // ════════════════════════════════════════════
+  // SERVICES (MULTI-TENANT)
+  // ════════════════════════════════════════════
+
+  async createOrUpdateService({ id, organizationId, name, durationMinutes, price, capacity = 1, bufferMinutes = 0, active }) {
+    const defaultId = id || randomUUID();
+    const now = new Date().toISOString();
+    
+    const { rowCount } = await this.pool.query(
+      `UPDATE services 
+       SET name = $1, duration_minutes = $2, price = $3, capacity = $4, buffer_minutes = $5, active = $6 
+       WHERE id = $7 AND organization_id = $8`,
+      [name, durationMinutes, price, capacity, bufferMinutes, active !== false, id, organizationId]
+    );
+
+    if (rowCount === 0) {
+      await this.pool.query(
+        `INSERT INTO services (id, organization_id, name, duration_minutes, price, capacity, buffer_minutes, active, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [defaultId, organizationId, name, durationMinutes, price, capacity, bufferMinutes, active !== false, now]
+      );
+    }
+    return defaultId;
+  }
+
+  async getServicesByOrganization(organizationId) {
+    const { rows } = await this.pool.query(
+      `SELECT * FROM services WHERE organization_id = $1 AND active = true ORDER BY name`,
+      [organizationId]
+    );
+    return rows.map(r => ({
+      id: r.id,
+      organizationId: r.organization_id,
+      name: r.name,
+      durationMinutes: r.duration_minutes,
+      price: r.price,
+      capacity: r.capacity,
+      bufferMinutes: r.buffer_minutes
+    }));
+  }
+
+  // ════════════════════════════════════════════
   // APPOINTMENTS
   // ════════════════════════════════════════════
 
-  async createAppointment({ customerId, organizationId, serviceType, startTime, endTime }) {
+  async createAppointment({ customerId, organizationId, serviceId, startTime, endTime }) {
     const id = `APT-${Date.now()}`;
     const now = new Date().toISOString();
     
-    // Check conflicts
-    const { rows } = await this.pool.query(
-      `SELECT id FROM appointments WHERE organization_id = $1 AND start_time = $2 AND status != 'cancelado'`,
-      [organizationId, startTime]
-    );
-
-    if (rows.length > 0) {
-      throw new Error('Horário indispónivel');
+    try {
+      await this.pool.query(
+        `INSERT INTO appointments (id, customer_id, organization_id, service_id, start_time, end_time, status, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, 'agendado', $7)`,
+        [id, customerId, organizationId, serviceId, startTime, endTime, now]
+      );
+      return id;
+    } catch (error) {
+       if (error.constraint === 'no_overlap' || (error.message && error.message.includes('conflicting key'))) {
+          throw new Error('CONFLITO_AGENDA');
+       }
+       throw error;
     }
+  }
 
-    await this.pool.query(
-      `INSERT INTO appointments (id, customer_id, organization_id, service_type, start_time, end_time, status, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, 'agendado', $7)`,
-      [id, customerId, organizationId, serviceType, startTime, endTime, now]
+  async getAppointmentsByRange(organizationId, start, end) {
+    const { rows } = await this.pool.query(
+      `SELECT * FROM appointments 
+       WHERE organization_id = $1 
+         AND start_time < $3 
+         AND end_time > $2 
+         AND status = 'agendado'`,
+      [organizationId, start, end]
     );
-    return id;
+    return rows.map(r => ({
+      id: r.id,
+      customerId: r.customer_id,
+      organizationId: r.organization_id,
+      serviceId: r.service_id,
+      startTime: r.start_time,
+      endTime: r.end_time,
+      status: r.status,
+    }));
   }
 
   async getAppointmentsByDateRange(organizationId, fromDate, toDate) {
@@ -320,7 +378,7 @@ class Database {
       id: r.id,
       customerId: r.customer_id,
       organizationId: r.organization_id,
-      serviceType: r.service_type,
+      serviceId: r.service_id,
       startTime: r.start_time,
       endTime: r.end_time,
       status: r.status,

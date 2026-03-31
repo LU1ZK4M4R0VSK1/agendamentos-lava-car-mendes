@@ -120,6 +120,11 @@ sentimento: positivo
       sat: { open: '06:00', close: '18:00' },
       sun: { open: '06:00', close: '18:00' }
     },
+    services: [
+      { id: 'svc_1', name: 'Lavagem Externa', durationMinutes: 30, bufferMinutes: 15, price: 35.00, active: true },
+      { id: 'svc_2', name: 'Lavagem Interna', durationMinutes: 30, bufferMinutes: 15, price: 45.00, active: true },
+      { id: 'svc_3', name: 'Lavagem Completa', durationMinutes: 60, bufferMinutes: 15, price: 70.00, active: true }
+    ],
     systemPrompt: `Você é o atendente do **Posto3l Lava Car**. 
 Seu atendimento acontece pelo WhatsApp e você ajuda agendamentos de lavagem de carros.
 
@@ -127,25 +132,20 @@ Seu atendimento acontece pelo WhatsApp e você ajuda agendamentos de lavagem de 
 * Estilo: simples, direto e breve.
 * Máximo 1 ou 2 frases por resposta.
 * Sem enrolação, sempre objetivo.
-* Nunca invente horários! Apenas ofereça horários que constam na lista de "HORÁRIOS DISPONÍVEIS" que o sistema injetar para você.
+* Nunca invente horários ou invente preços! Apenas ofereça horários e valores que constam na lista dinamicamente injetada abaixo das regras.
 * Se os horários não estiverem no contexto, diga que precisa verificar o sistema.
 
-## Nossos Serviços e Valores
-* **Lavagem Externa:** R$ 35,00
-* **Lavagem Interna:** R$ 45,00
-* **Lavagem Completa:** R$ 70,00
-
 ## Funções principais
-1. Identificar intenção de agendamento e qual tipo de lavagem o cliente deseja.
+1. Identificar a intenção de agendamento e qual serviço da lista o cliente deseja.
 2. Perguntar data se não informada.
-3. Oferecer horários disponíveis para a data escolhida.
-4. Confirmar o agendamento informando serviço, data, hora e valor.
+3. Oferecer os TRÊS primeiros horários disponíveis para a data escolhida baseando-se no contexto injetado HORÁRIOS LIVRES BASES.
+4. Confirmar o agendamento informando o NOME do serviço, data, hora e valor.
 5. Sempre confirmar antes de finalizar agendamento.
 
 ## Exemplo de respostas
 * "Bom dia! Qual dia você quer lavar o carro? Quer a lavagem externa, interna ou completa?"
-* "Temos 08:00, 09:00 ou 10:00 para amanhã. Qual prefere?"
-* "Tudo certo! Lavagem completa agendada para 09:00. Fica R$ 70,00. Te esperamos!"
+* "Temos 08:00, 08:15 ou 08:30 para amanhã. Qual prefere?"
+* "Tudo certo! Lavagem Completa agendada para 09:00. Fica R$ 70,00. Te esperamos!"
 
 ## Marcações (INVISÍVEIS PARA O CLIENTE)
 Quando confirmar um agendamento COMPLETO e finalizado (com cliente concordando), adicione obrigatoriamente SEMPRE:
@@ -153,10 +153,10 @@ Quando confirmar um agendamento COMPLETO e finalizado (com cliente concordando),
 [AGENDAMENTO_FECHADO]
 data: {YYYY-MM-DD}
 hora: {HH:mm}
-servico: {lavagem simples, completa, etc}
+service_id: {ID do serviço}
 [/AGENDAMENTO_FECHADO]
 
-Nunca forneça esta tag antes de confirmar com o cliente a data e hora desejada.`,
+⚠️ NUNCA use o nome do serviço como identificador em service_id! Use apenas a string exata do ID. Nunca forneça esta tag antes de confirmar com o cliente a data e hora desejada.`,
   },
 ];
 
@@ -165,6 +165,7 @@ async function seed() {
   const db = await new Database(config.POSTGRES_URL).initialize();
 
   for (const data of ORGANIZATIONS) {
+    let orgData;
     const existing = await db.findOrganizationByInstance(data.instanceName);
     if (existing) {
       // Atualiza o prompt e horários se já existir
@@ -173,10 +174,27 @@ async function seed() {
         [data.type || 'general', data.systemPrompt, JSON.stringify(data.businessHours), data.timezone || 'America/Sao_Paulo', data.instanceName]
       );
       console.log(`  🔄 ${data.name} atualizada`);
-      continue;
+      orgData = existing;
+    } else {
+      orgData = await db.createOrganization(data);
+      console.log(`  ✅ ${data.name} criada (${data.instanceName})`);
     }
-    await db.createOrganization(data);
-    console.log(`  ✅ ${data.name} criada (${data.instanceName})`);
+
+    // Processa os Services se existirem para a organização (Multi-Tenant SaaS)
+    if (data.services && data.services.length > 0) {
+        for (const srv of data.services) {
+            await db.createOrUpdateService({
+                id: srv.id,
+                organizationId: orgData.id,
+                name: srv.name,
+                durationMinutes: srv.durationMinutes,
+                bufferMinutes: srv.bufferMinutes,
+                price: srv.price,
+                active: srv.active
+            });
+        }
+        console.log(`     ↳ ${data.services.length} serviços persistidos (Buffers aplicados).`);
+    }
   }
 
   console.log('\n🌱 Seed concluído!');

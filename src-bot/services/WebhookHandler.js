@@ -162,17 +162,30 @@ class WebhookHandler {
     // Se agendamento detectado, salva e notifica grupo admin
     if (aptData) {
         try {
-            // aptData looks like { data: 'YYYY-MM-DD', hora: 'HH:mm', servico: 'tipo' }
+            // aptData looks like { data: 'YYYY-MM-DD', hora: 'HH:mm', service_id: 'svc_X' }
+            const services = await this.db.getServicesByOrganization(org.id);
+            
+            // Match EXATO pelo ID reposto na IA
+            const providedServiceId = (aptData.service_id || aptData.servico || '').trim();
+            const selectedService = services.find(s => s.id === providedServiceId);
+            
+            if (!selectedService) {
+                console.error(`Serviço não encontrado pelo ID: ${providedServiceId}`);
+                // Caso a IA desobedeça e envie outra coisa ou vazio
+                return;
+            }
+
             const isoStartTime = `${aptData.data}T${aptData.hora}:00${org.timezone === 'America/Sao_Paulo' ? '-03:00' : 'Z'}`;
-            // Assuming 1 hour duration
-            const durationMs = 60 * 60 * 1000;
+            // Usa Duração + Buffer
+            const totalMinutes = selectedService.durationMinutes + (selectedService.bufferMinutes || 0);
+            const durationMs = totalMinutes * 60 * 1000;
             const startTimeDate = new Date(isoStartTime);
             const endTimeDate = new Date(startTimeDate.getTime() + durationMs);
 
             const aptId = await this.db.createAppointment({
               customerId: customer.id,
               organizationId: org.id,
-              serviceType: aptData.servico || 'Lavagem',
+              serviceId: selectedService.id,
               startTime: startTimeDate.toISOString(),
               endTime: endTimeDate.toISOString()
             });
@@ -183,16 +196,19 @@ class WebhookHandler {
             const dateStr = aptData.data.split('-').reverse().join('/');
             const fakeOrderData = {
                 cliente: customer.pushName || 'Não informado',
-                itens: `Agendamento: ${aptData.servico || 'Lavagem'}`,
-                observacoes: `Data: ${dateStr} às ${aptData.hora}`
+                itens: `Agendamento: ${selectedService.name}`,
+                observacoes: `Data: ${dateStr} às ${aptData.hora} (Duração: ${selectedService.durationMinutes}m | Valor: R$ ${selectedService.price})`
             };
 
             await this._notifyAdminGroup(aptId, fakeOrderData, customer, org.name, instanceName);
 
         } catch (err) {
             console.error(`Erro ao criar agendamento: ${err.message}`);
-            // If the time was just taken by someone else and triggers the UNIQUE constraint
-            await this._sendWhatsApp(instanceName, remoteJid, "Desculpe, o horário que você escolheu acabou de ser reservado por outra pessoa. Pode tentar outro?");
+            if (err.message === 'CONFLITO_AGENDA') {
+               await this._sendWhatsApp(instanceName, remoteJid, "Esse horário acabou de ser ocupado. Me diga outro horário.");
+            } else {
+               await this._sendWhatsApp(instanceName, remoteJid, "Desculpe, ocorreu um erro sistêmico ao salvar seu agendamento. Pode tentar de novo?");
+            }
             return;
         }
     }
