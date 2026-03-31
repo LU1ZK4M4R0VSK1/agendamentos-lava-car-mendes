@@ -279,6 +279,54 @@ class Database {
       return null;
     }
   }
+
+  // ════════════════════════════════════════════
+  // APPOINTMENTS
+  // ════════════════════════════════════════════
+
+  async createAppointment({ customerId, organizationId, serviceType, startTime, endTime }) {
+    const id = `APT-${Date.now()}`;
+    const now = new Date().toISOString();
+    
+    // Check conflicts
+    const { rows } = await this.pool.query(
+      `SELECT id FROM appointments WHERE organization_id = $1 AND start_time = $2 AND status != 'cancelado'`,
+      [organizationId, startTime]
+    );
+
+    if (rows.length > 0) {
+      throw new Error('Horário indispónivel');
+    }
+
+    await this.pool.query(
+      `INSERT INTO appointments (id, customer_id, organization_id, service_type, start_time, end_time, status, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, 'agendado', $7)`,
+      [id, customerId, organizationId, serviceType, startTime, endTime, now]
+    );
+    return id;
+  }
+
+  async getAppointmentsByDateRange(organizationId, fromDate, toDate) {
+    const { rows } = await this.pool.query(
+      `SELECT * FROM appointments 
+       WHERE organization_id = $1 
+         AND start_time >= $2 
+         AND start_time <= $3 
+         AND status != 'cancelado' 
+       ORDER BY start_time ASC`,
+      [organizationId, fromDate, toDate]
+    );
+    return rows.map(r => ({
+      id: r.id,
+      customerId: r.customer_id,
+      organizationId: r.organization_id,
+      serviceType: r.service_type,
+      startTime: r.start_time,
+      endTime: r.end_time,
+      status: r.status,
+    }));
+  }
 }
 
 module.exports = Database;
+

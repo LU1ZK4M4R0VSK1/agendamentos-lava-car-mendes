@@ -9,6 +9,7 @@ const AIService = require('./services/AIService');
 const MessageProcessor = require('./services/MessageProcessor');
 const StatsService = require('./services/StatsService');
 const BusinessHoursService = require('./services/BusinessHoursService');
+const AppointmentService = require('./services/AppointmentService');
 const WebhookHandler = require('./services/WebhookHandler');
 const createRoutes = require('./webhook.routes');
 
@@ -31,7 +32,8 @@ async function main() {
   const messageProcessor = new MessageProcessor();
   const statsService = new StatsService({ db });
   const businessHoursService = new BusinessHoursService();
-  const webhookHandler = new WebhookHandler({ db, aiService, messageProcessor, statsService, businessHoursService, config });
+  const appointmentService = new AppointmentService(db);
+  const webhookHandler = new WebhookHandler({ db, aiService, messageProcessor, statsService, businessHoursService, appointmentService, config });
 
   // 3. Express
   const app = express();

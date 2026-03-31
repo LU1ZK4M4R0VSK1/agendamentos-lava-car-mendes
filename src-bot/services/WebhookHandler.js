@@ -11,12 +11,13 @@ class WebhookHandler {
    * @param {import('./MessageProcessor')} deps.messageProcessor
    * @param {import('../config')} deps.config
    */
-  constructor({ db, aiService, messageProcessor, statsService, businessHoursService, config }) {
+  constructor({ db, aiService, messageProcessor, statsService, businessHoursService, appointmentService, config }) {
     this.db = db;
     this.aiService = aiService;
     this.messageProcessor = messageProcessor;
     this.statsService = statsService;
     this.businessHoursService = businessHoursService;
+    this.appointmentService = appointmentService;
     this.config = config;
   }
 
@@ -110,13 +111,20 @@ class WebhookHandler {
     if (lastAddress) {
       enrichedPrompt += `\n\n--- MEMÓRIA DO CLIENTE ---\nO último endereço de entrega deste cliente foi: ${lastAddress}. Se ele pedir "no endereço de sempre", confirme se é este o endereço.\n`;
     }
-    enrichedPrompt += `\n\n${timeContext}`;
+    
+    if (org.type === 'service' || org.type === 'lavacar') {
+      const availContext = await this.appointmentService.generateAvailabilityContext(org);
+      enrichedPrompt += `\n\n${availContext}\nATENÇÃO: Você só pode agendar horários que aparecem listados como disponíveis acima. Nunca invente um horário.`;
+    } else {
+      enrichedPrompt += `\n\n${timeContext}`;
+    }
 
     // Gera resposta com IA
     const rawResponse = await this.aiService.ask(this.db, conversation.id, text, enrichedPrompt);
 
-    // Extrai pedido + limpa tags
+    // Extrai pedido ou agendamento + limpa tags
     const orderData = this.messageProcessor.extractOrder(rawResponse);
+    const aptData = this.messageProcessor.extractAppointment(rawResponse);
     const cleanText = this.messageProcessor.clean(rawResponse);
 
     // Salva resposta
@@ -149,6 +157,44 @@ class WebhookHandler {
 
       // Envia resumo no grupo admin
       await this._notifyAdminGroup(requestId, orderData, customer, org.name, instanceName);
+    }
+    
+    // Se agendamento detectado, salva e notifica grupo admin
+    if (aptData) {
+        try {
+            // aptData looks like { data: 'YYYY-MM-DD', hora: 'HH:mm', servico: 'tipo' }
+            const isoStartTime = `${aptData.data}T${aptData.hora}:00${org.timezone === 'America/Sao_Paulo' ? '-03:00' : 'Z'}`;
+            // Assuming 1 hour duration
+            const durationMs = 60 * 60 * 1000;
+            const startTimeDate = new Date(isoStartTime);
+            const endTimeDate = new Date(startTimeDate.getTime() + durationMs);
+
+            const aptId = await this.db.createAppointment({
+              customerId: customer.id,
+              organizationId: org.id,
+              serviceType: aptData.servico || 'Lavagem',
+              startTime: startTimeDate.toISOString(),
+              endTime: endTimeDate.toISOString()
+            });
+
+            if (this.config.DEBUG) console.log(`🗓️ Agendamento confirmado: ${aptId}`);
+            
+            // Format time for message
+            const dateStr = aptData.data.split('-').reverse().join('/');
+            const fakeOrderData = {
+                cliente: customer.pushName || 'Não informado',
+                itens: `Agendamento: ${aptData.servico || 'Lavagem'}`,
+                observacoes: `Data: ${dateStr} às ${aptData.hora}`
+            };
+
+            await this._notifyAdminGroup(aptId, fakeOrderData, customer, org.name, instanceName);
+
+        } catch (err) {
+            console.error(`Erro ao criar agendamento: ${err.message}`);
+            // If the time was just taken by someone else and triggers the UNIQUE constraint
+            await this._sendWhatsApp(instanceName, remoteJid, "Desculpe, o horário que você escolheu acabou de ser reservado por outra pessoa. Pode tentar outro?");
+            return;
+        }
     }
 
     // Envia resposta via Evolution API

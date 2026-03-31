@@ -33,6 +33,27 @@ class MessageProcessor {
   }
 
   /**
+   * Extrai dados de [AGENDAMENTO_FECHADO] da resposta
+   * @param {string} raw
+   * @returns {object|null}
+   */
+  extractAppointment(raw) {
+    const match = raw.match(/\[\s*AGENDAMENTO[_\s]?FECHADO\s*\]([\s\S]*?)\[\s*\/\s*AGENDAMENTO[_\s]?FECHADO\s*\]/i);
+    if (!match) return null;
+
+    const apt = {};
+    for (const line of match[1].trim().split('\n')) {
+      const i = line.indexOf(':');
+      if (i > 0) {
+        const key = line.substring(0, i).trim().toLowerCase().replace(/[_\s]/g, '');
+        const val = line.substring(i + 1).trim();
+        if (key && val) apt[key] = val;
+      }
+    }
+    return Object.keys(apt).length > 0 ? apt : null;
+  }
+
+  /**
    * Remove todas as tags de analytics e controle da resposta
    * @param {string} raw
    * @returns {string}
@@ -40,11 +61,13 @@ class MessageProcessor {
   clean(raw) {
     return raw
       .replace(/\[\s*PEDIDO[_\s]?FECHADO\s*\][\s\S]*?\[\s*\/\s*PEDIDO[_\s]?FECHADO\s*\]/gi, '')
+      .replace(/\[\s*AGENDAMENTO[_\s]?FECHADO\s*\][\s\S]*?\[\s*\/\s*AGENDAMENTO[_\s]?FECHADO\s*\]/gi, '')
       .replace(/\[\s*ANALYTICS\s*\][\s\S]*?\[\s*\/\s*ANALYTICS\s*\]/gi, '')
       .replace(/\[\s*NAO[_\s]?TEMOS\s*\][\s\S]*?\[\s*\/\s*NAO[_\s]?TEMOS\s*\]/gi, '')
       .replace(/\[\s*ENVIAR[_\s]?CARDAPIO\s*\]/gi, '')
       .trim();
   }
 }
+
 
 module.exports = MessageProcessor;

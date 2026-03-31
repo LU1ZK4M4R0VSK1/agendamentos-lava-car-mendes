@@ -74,3 +74,18 @@ CREATE INDEX IF NOT EXISTS idx_messages_whatsapp_id ON messages(whatsapp_message
 CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
 CREATE INDEX IF NOT EXISTS idx_service_requests_org ON service_requests(organization_id);
 CREATE INDEX IF NOT EXISTS idx_service_requests_created ON service_requests(created_at);
+
+CREATE TABLE IF NOT EXISTS appointments (
+    id TEXT PRIMARY KEY,
+    customer_id TEXT NOT NULL REFERENCES customers(id),
+    organization_id TEXT NOT NULL REFERENCES organizations(id),
+    service_type TEXT,
+    start_time TIMESTAMPTZ NOT NULL,
+    end_time TIMESTAMPTZ NOT NULL,
+    status TEXT DEFAULT 'agendado',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(organization_id, start_time)
+);
+
+CREATE INDEX IF NOT EXISTS idx_appointments_org ON appointments(organization_id);
+CREATE INDEX IF NOT EXISTS idx_appointments_start ON appointments(start_time);

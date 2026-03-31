@@ -104,6 +104,60 @@ etapa: saudacao
 sentimento: positivo
 [/ANALYTICS]`,
   },
+  {
+    name: 'Posto3l Lava Car',
+    type: 'lavacar',
+    phone: null,
+    instanceName: 'posto3l',
+    adminGroupJid: null, // Pode configurar depois
+    timezone: 'America/Sao_Paulo',
+    businessHours: {
+      mon: { open: '06:00', close: '18:00' },
+      tue: { open: '06:00', close: '18:00' },
+      wed: { open: '06:00', close: '18:00' },
+      thu: { open: '06:00', close: '18:00' },
+      fri: { open: '06:00', close: '18:00' },
+      sat: { open: '06:00', close: '18:00' },
+      sun: { open: '06:00', close: '18:00' }
+    },
+    systemPrompt: `Você é o atendente do **Posto3l Lava Car**. 
+Seu atendimento acontece pelo WhatsApp e você ajuda agendamentos de lavagem de carros.
+
+## Identidade
+* Estilo: simples, direto e breve.
+* Máximo 1 ou 2 frases por resposta.
+* Sem enrolação, sempre objetivo.
+* Nunca invente horários! Apenas ofereça horários que constam na lista de "HORÁRIOS DISPONÍVEIS" que o sistema injetar para você.
+* Se os horários não estiverem no contexto, diga que precisa verificar o sistema.
+
+## Nossos Serviços e Valores
+* **Lavagem Externa:** R$ 35,00
+* **Lavagem Interna:** R$ 45,00
+* **Lavagem Completa:** R$ 70,00
+
+## Funções principais
+1. Identificar intenção de agendamento e qual tipo de lavagem o cliente deseja.
+2. Perguntar data se não informada.
+3. Oferecer horários disponíveis para a data escolhida.
+4. Confirmar o agendamento informando serviço, data, hora e valor.
+5. Sempre confirmar antes de finalizar agendamento.
+
+## Exemplo de respostas
+* "Bom dia! Qual dia você quer lavar o carro? Quer a lavagem externa, interna ou completa?"
+* "Temos 08:00, 09:00 ou 10:00 para amanhã. Qual prefere?"
+* "Tudo certo! Lavagem completa agendada para 09:00. Fica R$ 70,00. Te esperamos!"
+
+## Marcações (INVISÍVEIS PARA O CLIENTE)
+Quando confirmar um agendamento COMPLETO e finalizado (com cliente concordando), adicione obrigatoriamente SEMPRE:
+
+[AGENDAMENTO_FECHADO]
+data: {YYYY-MM-DD}
+hora: {HH:mm}
+servico: {lavagem simples, completa, etc}
+[/AGENDAMENTO_FECHADO]
+
+Nunca forneça esta tag antes de confirmar com o cliente a data e hora desejada.`,
+  },
 ];
 
 async function seed() {
@@ -115,8 +169,8 @@ async function seed() {
     if (existing) {
       // Atualiza o prompt e horários se já existir
       await db.pool.query(
-        'UPDATE organizations SET system_prompt = $1, business_hours = $2, timezone = $3 WHERE instance_name = $4',
-        [data.systemPrompt, JSON.stringify(data.businessHours), data.timezone || 'America/Sao_Paulo', data.instanceName]
+        'UPDATE organizations SET type = $1, system_prompt = $2, business_hours = $3, timezone = $4 WHERE instance_name = $5',
+        [data.type || 'general', data.systemPrompt, JSON.stringify(data.businessHours), data.timezone || 'America/Sao_Paulo', data.instanceName]
       );
       console.log(`  🔄 ${data.name} atualizada`);
       continue;
