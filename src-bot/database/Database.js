@@ -102,14 +102,44 @@ class Database {
     }
 
     const id = randomUUID();
-    const phone = remoteJid.split('@')[0];
+    const phone = remoteJid.includes('@') ? remoteJid.split('@')[0] : remoteJid;
+    const finalJid = remoteJid.includes('@') ? remoteJid : `${remoteJid}@s.whatsapp.net`;
     const now = new Date().toISOString();
     await this.pool.query(
       `INSERT INTO customers (id, remote_jid, push_name, phone, organization_id, first_contact_at, last_contact_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [id, remoteJid, pushName, phone, organizationId, now, now]
+      [id, finalJid, pushName, phone, organizationId, now, now]
     );
-    return { id, remoteJid, pushName, phone };
+    return { id, remoteJid: finalJid, pushName, phone };
+  }
+
+  // ════════════════════════════════════════════
+  // VEHICLES
+  // ════════════════════════════════════════════
+
+  async findOrCreateVehicle({ customerId, plate, model, color, type }) {
+    const { rows } = await this.pool.query(
+      'SELECT * FROM vehicles WHERE plate = $1 AND customer_id = $2',
+      [plate, customerId]
+    );
+    let row = rows[0];
+
+    if (row) {
+      await this.pool.query(
+        'UPDATE vehicles SET model = $1, color = $2, type = $3, updated_at = $4 WHERE id = $5',
+        [model, color, type, new Date().toISOString(), row.id]
+      );
+      return row;
+    }
+
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    await this.pool.query(
+      `INSERT INTO vehicles (id, customer_id, plate, model, color, type, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [id, customerId, plate, model, color, type, now, now]
+    );
+    return { id, customerId, plate, model, color, type };
   }
 
   // ════════════════════════════════════════════
@@ -325,15 +355,15 @@ class Database {
   // APPOINTMENTS
   // ════════════════════════════════════════════
 
-  async createAppointment({ customerId, organizationId, serviceId, startTime, endTime }) {
+  async createAppointment({ customerId, organizationId, serviceId, vehicleId, startTime, endTime, totalPrice, status = 'agendado' }) {
     const id = `APT-${Date.now()}`;
     const now = new Date().toISOString();
     
     try {
       await this.pool.query(
-        `INSERT INTO appointments (id, customer_id, organization_id, service_id, start_time, end_time, status, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, 'agendado', $7)`,
-        [id, customerId, organizationId, serviceId, startTime, endTime, now]
+        `INSERT INTO appointments (id, customer_id, organization_id, service_id, vehicle_id, start_time, end_time, total_price, status, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [id, customerId, organizationId, serviceId, vehicleId, startTime, endTime, totalPrice, status, now]
       );
       return id;
     } catch (error) {
@@ -342,6 +372,45 @@ class Database {
        }
        throw error;
     }
+  }
+
+  /**
+   * Salva um agendamento completo vindo do site (Trinity Flow)
+   */
+  async saveFullBooking({ organizationId, customer, vehicle, appointment }) {
+    // 1. Cliente
+    const dbCustomer = await this.findOrCreateCustomer(
+      customer.phone, 
+      organizationId, 
+      customer.name
+    );
+
+    // 2. Veículo
+    const dbVehicle = await this.findOrCreateVehicle({
+      customerId: dbCustomer.id,
+      plate: vehicle.plate,
+      model: vehicle.model,
+      color: vehicle.color,
+      type: vehicle.type
+    });
+
+    // 3. Agendamento
+    const appointmentId = await this.createAppointment({
+      customerId: dbCustomer.id,
+      organizationId,
+      serviceId: appointment.serviceId,
+      vehicleId: dbVehicle.id,
+      startTime: appointment.startTime,
+      endTime: appointment.endTime,
+      totalPrice: appointment.totalPrice,
+      status: 'agendado'
+    });
+
+    return {
+      appointmentId,
+      customerId: dbCustomer.id,
+      vehicleId: dbVehicle.id
+    };
   }
 
   async getAppointmentsByRange(organizationId, start, end) {
@@ -383,6 +452,118 @@ class Database {
       endTime: r.end_time,
       status: r.status,
     }));
+  }
+
+  // ════════════════════════════════════════════
+  // ADMIN / DASHBOARD METHODS
+  // ════════════════════════════════════════════
+
+  async getAdminDashboardData(organizationId) {
+    const now = new Date();
+    const startOfDay = new Date(now.setHours(0, 0, 0, 0)).toISOString();
+    const endOfDay = new Date(now.setHours(23, 59, 59, 999)).toISOString();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+
+    // 1. Stats
+    const statsQuery = await this.pool.query(
+      `SELECT 
+        COUNT(*) FILTER (WHERE start_time >= $2 AND start_time <= $3 AND status != 'cancelado') as count_today,
+        SUM(total_price) FILTER (WHERE start_time >= $2 AND start_time <= $3 AND status != 'cancelado') as revenue_today,
+        COUNT(*) FILTER (WHERE status = 'agendado') as total_pending,
+        SUM(total_price) FILTER (WHERE start_time >= $4 AND status != 'cancelado') as revenue_month
+       FROM appointments 
+       WHERE organization_id = $1`,
+      [organizationId, startOfDay, endOfDay, startOfMonth]
+    );
+    const stats = statsQuery.rows[0];
+
+    // 2. Next Appointments (Próximos)
+    const nextQuery = await this.pool.query(
+      `SELECT a.*, c.push_name as customer_name, v.plate, v.model, s.name as service_name
+       FROM appointments a
+       JOIN customers c ON a.customer_id = c.id
+       LEFT JOIN vehicles v ON a.vehicle_id = v.id
+       JOIN services s ON a.service_id = s.id
+       WHERE a.organization_id = $1 
+         AND a.start_time >= $2
+         AND a.status IN ('agendado', 'em_andamento')
+       ORDER BY a.start_time ASC
+       LIMIT 10`,
+      [organizationId, new Date().toISOString()]
+    );
+
+    return {
+      stats: {
+        today_count: parseInt(stats.count_today || 0),
+        today_revenue: parseFloat(stats.revenue_today || 0),
+        pending_count: parseInt(stats.total_pending || 0),
+        month_revenue: parseFloat(stats.revenue_month || 0)
+      },
+      upcoming: nextQuery.rows.map(r => ({
+        id: r.id,
+        time: r.start_time,
+        client: r.customer_name,
+        service: r.service_name,
+        plate: r.plate || 'N/A',
+        model: r.model || 'N/A',
+        status: r.status
+      }))
+    };
+  }
+
+  async getAdminAgenda(organizationId, dateStr) {
+    const startOfDay = `${dateStr}T00:00:00.000Z`;
+    const endOfDay = `${dateStr}T23:59:59.999Z`;
+
+    const { rows } = await this.pool.query(
+      `SELECT a.*, c.push_name as customer_name, c.phone, v.plate, v.model, v.type as vehicle_type, s.name as service_name
+       FROM appointments a
+       JOIN customers c ON a.customer_id = c.id
+       LEFT JOIN vehicles v ON a.vehicle_id = v.id
+       JOIN services s ON a.service_id = s.id
+       WHERE a.organization_id = $1 
+         AND a.start_time >= $2 
+         AND a.start_time <= $3
+       ORDER BY a.start_time ASC`,
+      [organizationId, startOfDay, endOfDay]
+    );
+
+    return rows.map(r => ({
+      id: r.id,
+      startTime: r.start_time,
+      endTime: r.end_time,
+      client: r.customer_name,
+      phone: r.phone,
+      service: r.service_name,
+      plate: r.plate,
+      model: r.model,
+      vehicleType: r.type,
+      totalPrice: parseFloat(r.total_price),
+      status: r.status
+    }));
+  }
+
+  async getAdminCustomers(organizationId) {
+    const { rows } = await this.pool.query(
+      `SELECT c.*, 
+        COUNT(a.id) as total_appointments,
+        MAX(a.start_time) as last_visit
+       FROM customers c
+       LEFT JOIN appointments a ON c.id = a.customer_id
+       WHERE c.organization_id = $1
+       GROUP BY c.id
+       ORDER BY last_visit DESC NULLS LAST`,
+      [organizationId]
+    );
+    return rows;
+  }
+
+  async updateAppointmentStatus(appointmentId, organizationId, newStatus) {
+    const { rowCount } = await this.pool.query(
+      'UPDATE appointments SET status = $1, updated_at = NOW() WHERE id = $2 AND organization_id = $3',
+      [newStatus, appointmentId, organizationId]
+    );
+    return rowCount > 0;
   }
 }
 

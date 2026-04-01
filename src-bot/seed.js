@@ -105,58 +105,33 @@ sentimento: positivo
 [/ANALYTICS]`,
   },
   {
-    name: 'Posto3l Lava Car',
+    name: 'Lava Car Mendes',
     type: 'lavacar',
     phone: null,
     instanceName: 'posto3l',
     adminGroupJid: null, // Pode configurar depois
     timezone: 'America/Sao_Paulo',
     businessHours: {
-      mon: { open: '06:00', close: '18:00' },
-      tue: { open: '06:00', close: '18:00' },
-      wed: { open: '06:00', close: '18:00' },
-      thu: { open: '06:00', close: '18:00' },
-      fri: { open: '06:00', close: '18:00' },
-      sat: { open: '06:00', close: '18:00' },
-      sun: { open: '06:00', close: '18:00' }
+      mon: { open: '08:00', close: '18:00' },
+      tue: { open: '08:00', close: '18:00' },
+      wed: { open: '08:00', close: '18:00' },
+      thu: { open: '08:00', close: '18:00' },
+      fri: { open: '08:00', close: '18:00' },
+      sat: { open: '08:00', close: '14:00' },
+      sun: { closed: true }
     },
     services: [
-      { id: 'svc_1', name: 'Lavagem Externa', durationMinutes: 30, bufferMinutes: 15, price: 35.00, active: true },
-      { id: 'svc_2', name: 'Lavagem Interna', durationMinutes: 30, bufferMinutes: 15, price: 45.00, active: true },
+      { id: 'svc_1', name: 'Lavagem Externa', durationMinutes: 30, bufferMinutes: 15, price: 40.00, active: true },
+      { id: 'svc_2', name: 'Lavagem Interna', durationMinutes: 30, bufferMinutes: 15, price: 40.00, active: true },
       { id: 'svc_3', name: 'Lavagem Completa', durationMinutes: 60, bufferMinutes: 15, price: 70.00, active: true }
     ],
-    systemPrompt: `Você é o atendente do **Posto3l Lava Car**. 
-Seu atendimento acontece pelo WhatsApp e você ajuda agendamentos de lavagem de carros.
+    systemPrompt: `Você é o assistente virtual do **Lava Car Mendes**.
+Seu objetivo é saudar o cliente e fornecer o link de agendamento: {{scheduling_url}}.
 
-## Identidade
-* Estilo: simples, direto e breve.
-* Máximo 1 ou 2 frases por resposta.
-* Sem enrolação, sempre objetivo.
-* Nunca invente horários ou invente preços! Apenas ofereça horários e valores que constam na lista dinamicamente injetada abaixo das regras.
-* Se os horários não estiverem no contexto, diga que precisa verificar o sistema.
-
-## Funções principais
-1. Identificar a intenção de agendamento e qual serviço da lista o cliente deseja.
-2. Perguntar data se não informada.
-3. Oferecer os TRÊS primeiros horários disponíveis para a data escolhida baseando-se no contexto injetado HORÁRIOS LIVRES BASES.
-4. Confirmar o agendamento informando o NOME do serviço, data, hora e valor.
-5. Sempre confirmar antes de finalizar agendamento.
-
-## Exemplo de respostas
-* "Bom dia! Qual dia você quer lavar o carro? Quer a lavagem externa, interna ou completa?"
-* "Temos 08:00, 08:15 ou 08:30 para amanhã. Qual prefere?"
-* "Tudo certo! Lavagem Completa agendada para 09:00. Fica R$ 70,00. Te esperamos!"
-
-## Marcações (INVISÍVEIS PARA O CLIENTE)
-Quando confirmar um agendamento COMPLETO e finalizado (com cliente concordando), adicione obrigatoriamente SEMPRE:
-
-[AGENDAMENTO_FECHADO]
-data: {YYYY-MM-DD}
-hora: {HH:mm}
-service_id: {ID do serviço}
-[/AGENDAMENTO_FECHADO]
-
-⚠️ NUNCA use o nome do serviço como identificador em service_id! Use apenas a string exata do ID. Nunca forneça esta tag antes de confirmar com o cliente a data e hora desejada.`,
+## Regras
+* Seja simpático, breve e direto.
+* Responda em no máximo 2 frases.
+* Instrua o cliente a acessar o link para escolher o serviço e horário.`
   },
 ];
 

@@ -45,14 +45,25 @@ class StatsService {
     const customersResult = await this.db.pool.query(customersQuery, params);
     const customersCount = parseInt(customersResult.rows[0].count, 10);
 
-    // 2. Pedidos gerados
+    // 2. Pedidos gerados (Restaurantes)
     const ordersQuery = `
       SELECT COUNT(*) as count
       FROM service_requests
       WHERE organization_id = $1 ${timeFilter}
     `;
     const ordersResult = await this.db.pool.query(ordersQuery, params);
-    const ordersCount = parseInt(ordersResult.rows[0].count, 10);
+    const ordersCount = parseInt(ordersResult.rows[0].count, 10) || 0;
+
+    // 2.1 Agendamentos (Lava Cars, Clínicas, etc) e Faturamento
+    const aptsQuery = `
+      SELECT COUNT(*) as count, COALESCE(SUM(s.price), 0) as total_value
+      FROM appointments a
+      JOIN services s ON a.service_id = s.id
+      WHERE a.organization_id = $1 AND a.status != 'cancelado' ${timeFilter.replace('created_at', 'a.created_at')}
+    `;
+    const aptsResult = await this.db.pool.query(aptsQuery, params);
+    const aptsCount = parseInt(aptsResult.rows[0].count, 10) || 0;
+    const aptsValue = parseFloat(aptsResult.rows[0].total_value) || 0;
 
     // 3. Tempo médio de resposta
     let timeFilterTimestamp = '';
@@ -85,7 +96,9 @@ class StatsService {
 
     return {
       customersCount,
-      ordersCount,
+      ordersCount: ordersCount + aptsCount,
+      aptsCount,
+      revenue: aptsValue,
       avgResponseTime: Math.round(avgSeconds),
     };
   }

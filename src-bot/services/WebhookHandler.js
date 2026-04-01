@@ -275,9 +275,11 @@ class WebhookHandler {
         `📊 *Relatório: ${org.name}*`,
         `Período: ${periodLabel}`,
         '',
-        `🤖 O robô respondeu automaticamente *${stats.customersCount}* clientes,`,
-        `📦 gerou *${stats.ordersCount}* pedidos`,
-        `⏱️ e manteve tempo de resposta médio de *${formatTime(stats.avgResponseTime)}*.`,
+        `🤖 O robô conversou com *${stats.customersCount}* clientes,`,
+        (org.type === 'lavacar' || org.type === 'service')
+          ? `🚗 Fechou *${stats.aptsCount}* agendamentos/serviços somando *R$ ${stats.revenue.toFixed(2)}*`
+          : `📦 Gerou *${stats.ordersCount}* pedidos,`,
+        `⏱️ Mantendo tempo médio de resposta de *${formatTime(stats.avgResponseTime)}*.`,
         '',
         stats.avgResponseTime < 60 ? 'Manteve tempo de resposta imediato mesmo fora do horário. ✅' : ''
       ].filter(Boolean).join('\n');

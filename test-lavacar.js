@@ -14,7 +14,7 @@ const path = require('path');
 // ============================================
 const CONFIG = {
   // Use the API key testing
-  GEMINI_API_KEY: 'AIzaSyCE8bbJlcT3rmT0btdDZmivQY9JZL6jnXw',
+  GEMINI_API_KEY: 'AIzaSyDfR5Y3d6I4mnvVzfobYSvCGMbH6QEHFf4',
   MODEL: 'gemini-2.5-flash',
   
   TELEGRAM_ENABLED: false, 

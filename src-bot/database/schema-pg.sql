@@ -104,6 +104,7 @@ CREATE TABLE IF NOT EXISTS appointments (
     start_time TIMESTAMPTZ NOT NULL,
     end_time TIMESTAMPTZ NOT NULL,
     status TEXT CHECK (status IN ('agendado','confirmado','cancelado','concluido')) DEFAULT 'agendado',
+    reminder_sent BOOLEAN DEFAULT false,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

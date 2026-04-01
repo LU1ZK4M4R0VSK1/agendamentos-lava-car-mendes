@@ -37,8 +37,15 @@ async function main() {
 
   // 3. Express
   const app = express();
+  const cors = require('cors');
+  const createBookingRoutes = require('./booking.routes');
+  const createAdminRoutes = require('./admin.routes');
+  
+  app.use(cors());
   app.use(express.json({ limit: '2mb' }));
   app.use(createRoutes(webhookHandler));
+  app.use(createBookingRoutes(db));
+  app.use(createAdminRoutes(db));
 
   // 4. Limpeza periódica de conversas expiradas (a cada 5 min)
   setInterval(async () => {
