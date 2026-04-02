@@ -1,6 +1,6 @@
 // car-wash-boss/src/lib/api.ts
 
-const API_BASE_URL = 'http://localhost:3001/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
 const DEFAULT_ORG = 'posto3l'; // Lava Car Mendes
 
 export interface APIBookingPayload {
@@ -44,7 +44,9 @@ export const api = {
    * Busca dados do Dashboard Admin
    */
   async getDashboardData(org = DEFAULT_ORG) {
-    const response = await fetch(`${API_BASE_URL}/admin/dashboard?org=${org}`);
+    const response = await fetch(`${API_BASE_URL}/admin/dashboard?org=${org}`, {
+      headers: { 'x-admin-key': import.meta.env.VITE_ADMIN_API_KEY || 'dev-secret-key' }
+    });
     if (!response.ok) throw new Error('Erro ao buscar dashboard');
     return response.json();
   },
@@ -53,7 +55,9 @@ export const api = {
    * Busca agenda do dia
    */
   async getAgenda(date: string, org = DEFAULT_ORG) {
-    const response = await fetch(`${API_BASE_URL}/admin/agenda?org=${org}&date=${date}`);
+    const response = await fetch(`${API_BASE_URL}/admin/agenda?org=${org}&date=${date}`, {
+      headers: { 'x-admin-key': import.meta.env.VITE_ADMIN_API_KEY || 'dev-secret-key' }
+    });
     if (!response.ok) throw new Error('Erro ao buscar agenda');
     return response.json();
   },
@@ -62,7 +66,9 @@ export const api = {
    * Busca lista de clientes
    */
   async getCustomers(org = DEFAULT_ORG) {
-    const response = await fetch(`${API_BASE_URL}/admin/customers?org=${org}`);
+    const response = await fetch(`${API_BASE_URL}/admin/customers?org=${org}`, {
+      headers: { 'x-admin-key': import.meta.env.VITE_ADMIN_API_KEY || 'dev-secret-key' }
+    });
     if (!response.ok) throw new Error('Erro ao buscar clientes');
     return response.json();
   },
@@ -73,7 +79,10 @@ export const api = {
   async updateStatus(id: string, status: string, org = DEFAULT_ORG) {
     const response = await fetch(`${API_BASE_URL}/admin/appointments/${id}/status`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-admin-key': import.meta.env.VITE_ADMIN_API_KEY || 'dev-secret-key'
+      },
       body: JSON.stringify({ status, org }),
     });
     if (!response.ok) throw new Error('Erro ao atualizar status');
