@@ -12,7 +12,7 @@ import {
   Clock, Phone, User, Palette, CreditCard,
   Droplets, Sparkles, Shield, Wind, Loader2
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -41,6 +41,27 @@ export default function BookingFlow() {
   const [color, setColor] = useState('');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
+
+  useEffect(() => {
+    if (booking.date && booking.service) {
+      const fetchSlots = async () => {
+        setLoadingSlots(true);
+        try {
+          const dateStr = booking.date!.toISOString().split('T')[0];
+          const slots = await api.getAvailableSlots(dateStr, booking.service!.id);
+          setAvailableSlots(slots);
+        } catch (err) {
+          console.error(err);
+          toast.error('Erro ao buscar horários.');
+        } finally {
+          setLoadingSlots(false);
+        }
+      };
+      fetchSlots();
+    }
+  }, [booking.date, booking.service]);
 
   const finalPrice = booking.service && booking.vehicleType
     ? calculatePrice(booking.service, booking.vehicleType) : 0;
@@ -236,21 +257,34 @@ export default function BookingFlow() {
                 <p className="text-xs font-medium text-muted-foreground">
                   Horários em {format(booking.date, "dd 'de' MMMM", { locale: ptBR })}
                 </p>
-                <div className="grid grid-cols-4 gap-2">
-                  {timeSlots.map((slot) => (
-                    <button
-                      key={slot}
-                      onClick={() => setTime(slot)}
-                      className={cn(
-                        "py-2.5 rounded-xl text-sm font-medium transition-all duration-200 active:scale-95",
-                        booking.time === slot
-                          ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
-                          : "bg-secondary text-muted-foreground hover:text-foreground hover:bg-surface-hover"
-                      )}
-                    >
-                      {slot}
-                    </button>
-                  ))}
+                <div className="grid grid-cols-4 gap-2 relative">
+                  {loadingSlots && (
+                    <div className="absolute inset-0 bg-background/50 backdrop-blur-[1px] flex items-center justify-center z-10 rounded-xl">
+                      <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                    </div>
+                  )}
+                  {timeSlots.map((slot) => {
+                    const isAvailable = availableSlots.includes(slot);
+                    return (
+                      <button
+                        key={slot}
+                        disabled={!isAvailable}
+                        onClick={() => setTime(slot)}
+                        className={cn(
+                          "py-2.5 rounded-xl text-sm font-medium transition-all duration-200 active:scale-95",
+                          booking.time === slot
+                            ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
+                            : isAvailable 
+                              ? "bg-secondary text-muted-foreground hover:text-foreground hover:bg-surface-hover"
+                              : "bg-secondary/40 text-muted-foreground/30 cursor-not-allowed"
+                        )}
+                      >
+                        <span className={cn(!isAvailable && "line-through")}>
+                          {slot}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}

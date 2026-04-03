@@ -13,7 +13,13 @@ class Database {
   }
 
   async initialize() {
-    this.pool = new Pool({ connectionString: this.connectionString });
+    const ssl = this.connectionString.includes('sslmode=require') || process.env.POSTGRES_SSL === 'true'
+      ? { rejectUnauthorized: false } 
+      : false;
+    this.pool = new Pool({ 
+      connectionString: this.connectionString,
+      ssl
+    });
 
     // Testa a conexão
     const client = await this.pool.connect();

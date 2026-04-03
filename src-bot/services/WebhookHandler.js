@@ -119,6 +119,45 @@ class WebhookHandler {
       enrichedPrompt += `\n\n${timeContext}`;
     }
 
+    // ── OTIMIZAÇÃO: Tratamento Heurístico de Confirmação (Economia de Gemini) ──
+    const now = new Date();
+    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000).toISOString();
+    
+    // Busca agendamento que enviou confirmação recentemente e não foi confirmado/cancelado
+    const { rows: pendingApts } = await this.db.pool.query(
+      `SELECT * FROM appointments 
+       WHERE customer_id = $1 
+         AND confirmation_sent_at > $2 
+         AND confirmed_at IS NULL 
+         AND status = 'agendado'
+       ORDER BY start_time ASC LIMIT 1`,
+      [customer.id, oneHourAgo]
+    );
+
+    if (pendingApts.length > 0) {
+      const apt = pendingApts[0];
+      const cleanInput = text.toLowerCase().trim().replace(/[?!.]/g, '');
+      
+      const isPositive = ['sim', 'confirmar', 'confirmo', 'com certeza', 'ok', 'pode marcar'].some(k => cleanInput.includes(k));
+      const isNegative = ['não', 'nao', 'cancelar', 'cancela', 'não vou', 'não posso', 'alterar'].some(k => cleanInput.includes(k));
+
+      if (isNegative) {
+        await this.db.updateAppointmentStatus(apt.id, org.id, 'cancelado');
+        const cancelMsg = "Entendido! Acabei de cancelar seu agendamento. O horário agora está disponível para outros clientes. Se precisar de algo mais, estou à disposição! ❌";
+        await this.db.createMessage({ conversationId: conversation.id, direction: 'outbound', content: cancelMsg, senderJid: 'bot' });
+        await this._sendWhatsApp(instanceName, remoteJid, cancelMsg);
+        return; // Economizou 1 chamada ao Gemini
+      }
+
+      if (isPositive) {
+        await this.db.pool.query('UPDATE appointments SET status = $1, confirmed_at = NOW() WHERE id = $2', ['confirmado', apt.id]);
+        const confirmMsg = "Maravilha! Seu agendamento está confirmado. Te esperamos em breve! ✅";
+        await this.db.createMessage({ conversationId: conversation.id, direction: 'outbound', content: confirmMsg, senderJid: 'bot' });
+        await this._sendWhatsApp(instanceName, remoteJid, confirmMsg);
+        return; // Economizou 1 chamada ao Gemini
+      }
+    }
+
     // Gera resposta com IA
     const rawResponse = await this.aiService.ask(this.db, conversation.id, text, enrichedPrompt);
 

@@ -28,6 +28,10 @@ const config = {
 
   // Grupo Admin (JID do grupo WhatsApp para comandos de pedido)
   ADMIN_GROUP_JID: process.env.ADMIN_GROUP_JID || '120363426806631355@g.us',
+
+  // Segurança (Admin API e CORS)
+  ADMIN_API_KEY: process.env.ADMIN_API_KEY || 'dev-secret-key',
+  CORS_ORIGINS: process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : ['http://localhost:8080', 'http://localhost:5173'],
 };
 
 module.exports = config;

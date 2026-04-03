@@ -41,6 +41,15 @@ export const api = {
   },
 
   /**
+   * Busca horários disponíveis para um dia e serviço específicos
+   */
+  async getAvailableSlots(date: string, service_id: string, org = DEFAULT_ORG) {
+    const response = await fetch(`${API_BASE_URL}/public/available-slots?organization_id=${org}&date=${date}&service_id=${service_id}`);
+    if (!response.ok) throw new Error('Erro ao buscar horários disponíveis');
+    return response.json();
+  },
+
+  /**
    * Busca dados do Dashboard Admin
    */
   async getDashboardData(org = DEFAULT_ORG) {

@@ -104,21 +104,26 @@ CREATE TABLE IF NOT EXISTS appointments (
     start_time TIMESTAMPTZ NOT NULL,
     end_time TIMESTAMPTZ NOT NULL,
     status TEXT CHECK (status IN ('agendado','confirmado','cancelado','concluido')) DEFAULT 'agendado',
-    reminder_sent BOOLEAN DEFAULT false,
+    confirmation_sent_at TIMESTAMPTZ,
+    confirmed_at TIMESTAMPTZ,
+    reminder_sent BOOLEAN DEFAULT false, -- legacy campo
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 DO $$ 
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'no_overlap') THEN
-        ALTER TABLE appointments
-        ADD CONSTRAINT no_overlap
-        EXCLUDE USING GIST (
-            organization_id WITH =,
-            tstzrange(start_time, end_time) WITH &&
-        )
-        WHERE (status = 'agendado');
+    -- Drop old constraint if it only covers 'agendado'
+    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'no_overlap') THEN
+        ALTER TABLE appointments DROP CONSTRAINT no_overlap;
     END IF;
+
+    ALTER TABLE appointments
+    ADD CONSTRAINT no_overlap
+    EXCLUDE USING GIST (
+        organization_id WITH =,
+        tstzrange(start_time, end_time) WITH &&
+    )
+    WHERE (status IN ('agendado', 'confirmado'));
 END $$;
 
 CREATE INDEX IF NOT EXISTS idx_appointments_org ON appointments(organization_id);

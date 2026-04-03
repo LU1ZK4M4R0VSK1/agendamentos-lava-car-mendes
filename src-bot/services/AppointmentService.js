@@ -20,11 +20,14 @@ class AppointmentService {
     dayjs.extend(utc);
     dayjs.extend(timezone);
 
-    const org = await this.db.findOrganizationByInstance(organizationId); // ou passamos direto org
-    const tz = org ? (org.timezone || 'America/Sao_Paulo') : 'America/Sao_Paulo';
+    const org = await this.db.findOrganizationByInstance(organizationId);
+    if (!org) return [];
+
+    const realOrgId = org.id;
+    const tz = org.timezone || 'America/Sao_Paulo';
     
     // Busca serviço e appointments
-    const services = await this.db.getServicesByOrganization(organizationId);
+    const services = await this.db.getServicesByOrganization(realOrgId);
     const service = services.find(s => s.id === serviceId);
     if (!service) return [];
 
@@ -35,7 +38,7 @@ class AppointmentService {
     const endOfDay = targetDate.endOf('day');
 
     const appointments = await this.db.getAppointmentsByRange(
-      organizationId,
+      realOrgId,
       startOfDay.toISOString(),
       endOfDay.toISOString()
     );

@@ -6,6 +6,22 @@ function createBookingRoutes(db) {
   const router = Router();
 
   /**
+   * Endpoint público para buscar horários disponíveis
+   * GET /api/public/available-slots
+   */
+  router.get('/api/public/available-slots', async (req, res) => {
+    try {
+      const { organization_id, date, service_id } = req.query;
+      const AppointmentService = require('./services/AppointmentService');
+      const aptService = new AppointmentService(db);
+      const slots = await aptService.getAvailableSlots(organization_id, date, service_id);
+      res.json(slots);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  /**
    * Endpoint público para receber agendamentos do site
    * POST /api/public/bookings
    */

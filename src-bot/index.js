@@ -1,7 +1,7 @@
 // src-bot/index.js
 // Entry point — MVP simplificado (PostgreSQL)
 
-require('dotenv').config();
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const express = require('express');
 const config = require('./config');
 const Database = require('./database/Database');
@@ -10,6 +10,7 @@ const MessageProcessor = require('./services/MessageProcessor');
 const StatsService = require('./services/StatsService');
 const BusinessHoursService = require('./services/BusinessHoursService');
 const AppointmentService = require('./services/AppointmentService');
+const ConfirmationService = require('./services/ConfirmationService');
 const WebhookHandler = require('./services/WebhookHandler');
 const createRoutes = require('./webhook.routes');
 
@@ -33,6 +34,7 @@ async function main() {
   const statsService = new StatsService({ db });
   const businessHoursService = new BusinessHoursService();
   const appointmentService = new AppointmentService(db);
+  const confirmationService = new ConfirmationService(db, config);
   const webhookHandler = new WebhookHandler({ db, aiService, messageProcessor, statsService, businessHoursService, appointmentService, config });
 
   // 3. Express
@@ -41,7 +43,18 @@ async function main() {
   const createBookingRoutes = require('./booking.routes');
   const createAdminRoutes = require('./admin.routes');
   
-  app.use(cors());
+  app.use(cors({
+    origin: (origin, callback) => {
+      // Permite requisições sem origin (ex: mobile apps ou curl) ou se estiver na whitelist
+      if (!origin || config.CORS_ORIGINS.includes(origin)) {
+        callback(null, true);
+      } else {
+        console.warn(`🔒 CORS bloqueado para origem: ${origin}`);
+        callback(new Error('Não permitido pelo CORS'));
+      }
+    },
+    credentials: true
+  }));
   app.use(express.json({ limit: '2mb' }));
   app.use(createRoutes(webhookHandler));
   app.use(createBookingRoutes(db));
@@ -56,6 +69,15 @@ async function main() {
       console.error('❌ Erro ao fechar conversas expiradas:', err.message);
     }
   }, 5 * 60 * 1000);
+
+  // 6. Confirmação automática de agendamentos (a cada 15 min)
+  setInterval(async () => {
+    try {
+      await confirmationService.checkAndSendConfirmations();
+    } catch (err) {
+      console.error('❌ Erro no processo de confirmação:', err.message);
+    }
+  }, 15 * 60 * 1000);
 
   // 5. Start
   app.listen(config.PORT, async () => {

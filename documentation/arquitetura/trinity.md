@@ -1,4 +1,4 @@
-# 🔱 LAVA CAR MENDES - DOCUMENTAÇÃO DO SISTEMA (TRINITY MODEL)
+# 🔱 ESTRUTURA DA PLATAFORMA (MODELO TRINITY) - MULTI-TENANT SaaS
 
 Esta documentação serve como o "Cérebro do Projeto" para guiar IAs e desenvolvedores. Use este arquivo para entender a arquitetura, os contratos de API e como o sistema "respira".
 

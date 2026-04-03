@@ -9,8 +9,12 @@ function createAdminRoutes(db) {
    * Em produção, trocar por JWT ou similar.
    */
   const simpleAuth = (req, res, next) => {
-    // Por enquanto liberado para desenvolvimento local
-    next();
+    const apiKey = req.headers['x-admin-key'];
+    if (apiKey && apiKey === config.ADMIN_API_KEY) {
+      return next();
+    }
+    console.warn(`🔐 Acesso negado: Tentativa de acesso admin sem chave válida.`);
+    res.status(401).json({ error: 'Não autorizado. Chave de API Admin inválida.' });
   };
 
   /**

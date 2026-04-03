@@ -1,6 +1,6 @@
-# 📖 Guia de Configuração: Novo Restaurante (Evolution Bot)
+# 📖 Guia de Configuração: Novo Cliente / Tenant (Evolution Bot)
 
-Este guia foi criado para auxiliar IAs e desenvolvedores a configurar rapidamente um novo restaurante/instância no sistema Evolution Bot.
+Este guia foi criado para auxiliar IAs e desenvolvedores a configurar rapidamente um novo estabelecimento (Lava Car, Restaurante, Clínica, etc.) no sistema Evolution Bot.
 
 ---
 
